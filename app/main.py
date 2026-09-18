@@ -17,6 +17,13 @@ from ps3 import predict
 
 app = FastAPI(title="NebulaX PS3 - Fault Prediction")
 
+# predict.run is CPU-bound (pandas/numpy/sklearn); asyncio.to_thread lets
+# requests overlap instead of queuing on the event loop, but each one still
+# competes for real CPU and memory. Cap how many run at once to the actual
+# core count so a burst of concurrent uploads (a large multi-file batch)
+# can't oversubscribe a small instance and get OOM-killed mid-request.
+_predict_semaphore = asyncio.Semaphore(max(1, os.cpu_count() or 1))
+
 # The Next.js server proxies through this via next.config.ts rewrites (see
 # PS3_API_ORIGIN there), so same-origin browser requests never hit CORS.
 # This only matters if something calls the API directly cross-origin (a
@@ -76,10 +83,8 @@ async def run_prediction(subsystem: str, file: UploadFile = File(...)):
         tmp_path = tmp.name
 
     try:
-        # predict.run is CPU-bound sync code (pandas/numpy/sklearn); run it off
-        # the event loop so concurrent uploads (e.g. a multi-file batch from the
-        # UI) don't serialize behind each other on a single request at a time.
-        result = await asyncio.to_thread(predict.run, key, tmp_path)
+        async with _predict_semaphore:
+            result = await asyncio.to_thread(predict.run, key, tmp_path)
     except Exception as exc:
         raise HTTPException(
             422, f"Couldn't read this file as {meta['label']} data: {exc}")

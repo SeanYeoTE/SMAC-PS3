@@ -12,8 +12,13 @@ import { UploadCard } from "@/components/upload-card";
 import { BatchResults } from "@/components/batch-results";
 import { fetchSubsystems, predict } from "@/lib/api";
 import { downloadBatchSummaryCsv, downloadResultCsv } from "@/lib/csv";
+import { runWithConcurrency } from "@/lib/pool";
 import { countFlagged, summarizeResult } from "@/lib/summary";
 import type { BatchItem, SubsystemKey, SubsystemsResponse } from "@/lib/types";
+
+// The backend runs on a single-vCPU instance; keep batch uploads from firing
+// dozens of large files at once and piling up memory/CPU on one request.
+const UPLOAD_CONCURRENCY = 3;
 
 async function predictOne(subsystem: SubsystemKey, file: File): Promise<BatchItem> {
   try {
@@ -63,7 +68,7 @@ export default function Home() {
   async function handleAnalyze() {
     if (!selected || files.length === 0) return;
     setIsAnalyzing(true);
-    const settled = await Promise.all(files.map((file) => predictOne(selected, file)));
+    const settled = await runWithConcurrency(files, UPLOAD_CONCURRENCY, (file) => predictOne(selected, file));
     setItems(settled);
     setIsAnalyzing(false);
   }
@@ -78,7 +83,7 @@ export default function Home() {
     const failed = items.filter((it) => it.status === "error");
     if (failed.length === 0) return;
     setIsAnalyzing(true);
-    const retried = await Promise.all(failed.map((it) => predictOne(selected, it.file)));
+    const retried = await runWithConcurrency(failed, UPLOAD_CONCURRENCY, (it) => predictOne(selected, it.file));
     let next = 0;
     setItems(items.map((it) => (it.status === "error" ? retried[next++] : it)));
     setIsAnalyzing(false);
