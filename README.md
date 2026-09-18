@@ -391,6 +391,29 @@ This writes the four CSVs to `submission/`. It is for checking the output format
 The real submission should be produced by uploading files through the deployed app, so
 the predictions demonstrably come from the app itself.
 
+## Web app
+
+A Next.js + shadcn/ui frontend and a FastAPI backend wrap `predict.run` in an
+upload-and-diagnose UI: pick a subsystem, drop in its test file, get a
+plain-language result with the supporting numbers underneath.
+
+Missing Python 3.10+ or Node.js 18+? `./setup.sh` checks for both, offers to
+install whichever is missing (sudo-free, official binaries only), and can
+run `pip install` / `npm install` for you.
+
+```bash
+pip install -r requirements.txt
+uvicorn app.main:app --reload          # backend, http://127.0.0.1:8000
+
+cd web && npm install
+npm run dev                            # frontend, http://localhost:3000
+```
+
+The frontend proxies `/api/*` to the backend (see `web/next.config.ts`), so
+only `http://localhost:3000` needs to be open. `GET /api/subsystems` lists
+what each subsystem accepts; `POST /api/predict/{subsystem}` takes a
+multipart file upload and returns the same JSON shape `predict.run` does.
+
 ## Repository layout
 
 ```
@@ -406,4 +429,6 @@ make_submissions.py     offline submission generator (format check)
 requirements.txt
 submission/             four formatted CSVs
 charts/                 figures used in this README
+app/main.py             FastAPI wrapper around ps3.predict
+web/                    Next.js + shadcn/ui upload-and-diagnose frontend
 ```
