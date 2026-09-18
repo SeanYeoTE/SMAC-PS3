@@ -1,6 +1,6 @@
 import { formatDoorTimestamp, formatNowTimestamp } from "@/lib/format";
 import { summarizeResult } from "@/lib/summary";
-import type { BatchItem, PredictResult } from "@/lib/types";
+import type { BatchItem, PredictResult, SubsystemKey } from "@/lib/types";
 
 function escapeCsvField(value: string | number): string {
   const s = String(value);
@@ -9,6 +9,11 @@ function escapeCsvField(value: string | number): string {
 
 function toCsv(rows: (string | number)[][]): string {
   return rows.map((row) => row.map(escapeCsvField).join(",")).join("\r\n");
+}
+
+/** Matches pandas.to_csv's line endings, since this is the file a grading script parses. */
+function toCsvLF(rows: (string | number)[][]): string {
+  return rows.map((row) => row.map(escapeCsvField).join(",")).join("\n");
 }
 
 function doorCsv(result: Extract<PredictResult, { subsystem: "door" }>): string {
@@ -135,8 +140,49 @@ export function downloadBatchSummaryCsv(subsystem: string, items: BatchItem[]): 
       rows.push([item.file.name, "Error", "", "", item.error]);
       continue;
     }
+    if (item.status !== "done") continue;
     const summary = summarizeResult(item.result);
     rows.push([item.file.name, "Done", summary.label, summary.severityPct.toFixed(0), summary.severityLabel]);
   }
   triggerCsvDownload(toCsv(rows), `${subsystem}-batch-summary-${formatNowTimestamp()}.csv`);
+}
+
+/**
+ * The official scoring format for each subsystem (matches submission/*_predictions.csv):
+ * door has no file_id (per-segment rows from one continuous stream); rail/shm/acv are
+ * one row per uploaded file, keyed by file_id.
+ */
+export function predictionsCsv(subsystem: SubsystemKey, items: BatchItem[]): string {
+  const done = items.filter((it): it is Extract<BatchItem, { status: "done" }> => it.status === "done");
+  if (subsystem === "door") {
+    const rows: (string | number)[][] = [["start_time", "end_time", "prediction"]];
+    for (const item of done) {
+      const result = item.result as Extract<PredictResult, { subsystem: "door" }>;
+      for (const seg of result.segments) rows.push([seg.start_time, seg.end_time, seg.prediction]);
+    }
+    return toCsvLF(rows);
+  }
+  if (subsystem === "rail") {
+    const rows: (string | number)[][] = [["file_id", "prediction"]];
+    for (const item of done) {
+      rows.push([item.file.name, (item.result as Extract<PredictResult, { subsystem: "rail" }>).prediction]);
+    }
+    return toCsvLF(rows);
+  }
+  if (subsystem === "shm") {
+    const rows: (string | number)[][] = [["file_id", "prediction"]];
+    for (const item of done) {
+      rows.push([item.file.name, (item.result as Extract<PredictResult, { subsystem: "shm" }>).prediction]);
+    }
+    return toCsvLF(rows);
+  }
+  const rows: (string | number)[][] = [["file_id", "ranked_cars"]];
+  for (const item of done) {
+    rows.push([item.file.name, (item.result as Extract<PredictResult, { subsystem: "acv" }>).ranked_cars]);
+  }
+  return toCsvLF(rows);
+}
+
+export function downloadPredictionsCsv(subsystem: SubsystemKey, items: BatchItem[]): void {
+  triggerCsvDownload(predictionsCsv(subsystem, items), `${subsystem}_predictions.csv`);
 }

@@ -1,17 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Download, Fingerprint, TrainFront } from "lucide-react";
+import { Download, Loader2, TrainFront } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatTile } from "@/components/stat-tile";
+import { StatusBar } from "@/components/status-bar";
 import { StatusPill } from "@/components/status-pill";
-import { SubsystemPicker } from "@/components/subsystem-picker";
+import { SubsystemSidebar } from "@/components/subsystem-sidebar";
 import { UploadCard } from "@/components/upload-card";
 import { BatchResults } from "@/components/batch-results";
 import { fetchSubsystems, predict } from "@/lib/api";
-import { downloadBatchSummaryCsv, downloadResultCsv } from "@/lib/csv";
+import { downloadBatchSummaryCsv, downloadPredictionsCsv, downloadResultCsv } from "@/lib/csv";
 import { countFlagged, summarizeResult } from "@/lib/summary";
 import type { BatchItem, SubsystemKey, SubsystemsResponse } from "@/lib/types";
 
@@ -31,9 +33,13 @@ function fileStagedLabel(files: File[]): string {
 
 function lastResultSummary(items: BatchItem[] | null): { label: string; bad: boolean } {
   if (!items || items.length === 0) return { label: "—", bad: false };
+  const settledCount = items.filter((it) => it.status === "done" || it.status === "error").length;
+  if (settledCount < items.length) return { label: `${settledCount}/${items.length} done`, bad: false };
   if (items.length === 1) {
     const item = items[0];
-    return item.status === "error" ? { label: "Error", bad: true } : summarizeResult(item.result);
+    if (item.status === "error") return { label: "Error", bad: true };
+    if (item.status === "done") return summarizeResult(item.result);
+    return { label: "—", bad: false };
   }
   const flagged = countFlagged(items);
   return { label: `${flagged}/${items.length} flagged`, bad: flagged > 0 };
@@ -45,8 +51,9 @@ export default function Home() {
   const [selected, setSelected] = useState<SubsystemKey | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [items, setItems] = useState<BatchItem[] | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const resultSummary = useMemo(() => lastResultSummary(items), [items]);
+  const isAnalyzing = items?.some((it) => it.status === "pending" || it.status === "processing") ?? false;
+  const settledCount = items?.filter((it) => it.status === "done" || it.status === "error").length ?? 0;
 
   useEffect(() => {
     fetchSubsystems()
@@ -62,10 +69,13 @@ export default function Home() {
 
   async function handleAnalyze() {
     if (!selected || files.length === 0) return;
-    setIsAnalyzing(true);
-    const settled = await Promise.all(files.map((file) => predictOne(selected, file)));
-    setItems(settled);
-    setIsAnalyzing(false);
+    setItems(files.map((file) => ({ file, status: "pending" })));
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      setItems((prev) => prev?.map((it, idx) => (idx === i ? { file, status: "processing" } : it)) ?? prev);
+      const result = await predictOne(selected, file);
+      setItems((prev) => prev?.map((it, idx) => (idx === i ? result : it)) ?? prev);
+    }
   }
 
   function handleReset() {
@@ -75,56 +85,63 @@ export default function Home() {
 
   async function handleRetry() {
     if (!selected || !items) return;
-    const failed = items.filter((it) => it.status === "error");
-    if (failed.length === 0) return;
-    setIsAnalyzing(true);
-    const retried = await Promise.all(failed.map((it) => predictOne(selected, it.file)));
-    let next = 0;
-    setItems(items.map((it) => (it.status === "error" ? retried[next++] : it)));
-    setIsAnalyzing(false);
+    const failedIndices = items.reduce<number[]>((acc, it, i) => {
+      if (it.status === "error") acc.push(i);
+      return acc;
+    }, []);
+    if (failedIndices.length === 0) return;
+    for (const i of failedIndices) {
+      const file = items[i].file;
+      setItems((prev) => prev?.map((it, idx) => (idx === i ? { file, status: "processing" } : it)) ?? prev);
+      const result = await predictOne(selected, file);
+      setItems((prev) => prev?.map((it, idx) => (idx === i ? result : it)) ?? prev);
+    }
   }
 
   const soleResult = items && items.length === 1 && items[0].status === "done" ? items[0].result : null;
   const hasError = items?.some((it) => it.status === "error") ?? false;
 
   return (
-    <div className="relative flex flex-1 flex-col bg-background">
-      <div className="bg-grid-fade pointer-events-none absolute inset-0 z-0" aria-hidden="true" />
-      <header className="relative z-10 border-b border-border bg-card/60 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-6">
-          <div className="flex items-center gap-3">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/30">
-              <TrainFront className="size-5 text-primary" aria-hidden="true" />
+    <SidebarProvider>
+      <SubsystemSidebar subsystems={subsystems} selected={selected} onSelect={handleSelect} />
+      <SidebarInset className="relative">
+        <div className="bg-grid-fade pointer-events-none absolute inset-0 z-0" aria-hidden="true" />
+        <header className="relative z-10 border-b border-border bg-card/60 backdrop-blur">
+          <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
+            <div className="flex items-center gap-3">
+              <SidebarTrigger className="md:hidden" />
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/30">
+                <TrainFront className="size-5 text-primary" aria-hidden="true" />
+              </div>
+              <div>
+                <p className="eyebrow">Nebula X · Problem Statement 3</p>
+                <h1 className="text-lg font-semibold tracking-tight">Fault Intelligence Console</h1>
+              </div>
             </div>
-            <div>
-              <p className="eyebrow">Nebula X · Problem Statement 3</p>
-              <h1 className="text-lg font-semibold tracking-tight">Fault Intelligence Console</h1>
+            <StatusPill className="hidden sm:inline-flex" tone={loadError ? "bad" : subsystems ? "good" : "neutral"}>
+              {!subsystems && !loadError && <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden="true" />}
+              {loadError ? "Offline" : subsystems ? "Live" : "Connecting…"}
+            </StatusPill>
+          </div>
+        </header>
+
+        <main className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 flex-col gap-5 px-4 py-6 sm:px-6">
+          {loadError && (
+            <Alert variant="destructive">
+              <AlertTitle>Couldn&apos;t reach the prediction server</AlertTitle>
+              <AlertDescription>{loadError}</AlertDescription>
+            </Alert>
+          )}
+
+          {!subsystems && !loadError && (
+            <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-20 rounded-xl" />
+              ))}
             </div>
-          </div>
-          <StatusPill tone={loadError ? "bad" : subsystems ? "good" : "neutral"}>
-            {loadError ? "Offline" : subsystems ? "Live" : "Connecting…"}
-          </StatusPill>
-        </div>
-      </header>
+          )}
 
-      <main className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 flex-col gap-5 px-4 py-6 sm:px-6">
-        {loadError && (
-          <Alert variant="destructive">
-            <AlertTitle>Couldn&apos;t reach the prediction server</AlertTitle>
-            <AlertDescription>{loadError}</AlertDescription>
-          </Alert>
-        )}
-
-        {!subsystems && !loadError && (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-28 rounded-xl" />
-            ))}
-          </div>
-        )}
-
-        {subsystems && (
-          <>
+          {subsystems && (
             <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
               <StatTile label="Subsystems Online" value={Object.keys(subsystems).length} tone="accent" />
               <StatTile label="Selected" value={selected ? selected.toUpperCase() : "—"} />
@@ -135,55 +152,65 @@ export default function Home() {
                 tone={items ? (resultSummary.bad ? "bad" : "accent") : "default"}
               />
             </div>
+          )}
 
-            <section className="flex flex-col gap-3">
-              <div className="flex items-center gap-2">
-                <Fingerprint className="size-4 text-muted-foreground" aria-hidden="true" />
-                <h2 className="eyebrow">Choose a subsystem</h2>
-              </div>
-              <SubsystemPicker subsystems={subsystems} selected={selected} onSelect={handleSelect} />
-            </section>
-          </>
-        )}
+          {subsystems && selected && !items && (
+            <UploadCard
+              subsystem={selected}
+              meta={subsystems[selected]}
+              files={files}
+              onFilesChange={setFiles}
+              onAnalyze={handleAnalyze}
+              isLoading={isAnalyzing}
+            />
+          )}
 
-        {subsystems && selected && !items && (
-          <UploadCard
-            meta={subsystems[selected]}
-            files={files}
-            onFilesChange={setFiles}
-            onAnalyze={handleAnalyze}
-            isLoading={isAnalyzing}
-          />
-        )}
-
-        {items && (
-          <>
-            <BatchResults items={items} />
-            <div className="flex flex-wrap justify-center gap-2">
-              {soleResult && (
-                <Button variant="outline" onClick={() => downloadResultCsv(soleResult)}>
-                  <Download aria-hidden="true" data-icon="inline-start" />
-                  Download CSV
-                </Button>
+          {items && (
+            <>
+              {isAnalyzing && (
+                <div className="flex flex-col gap-2 rounded-xl border border-border bg-card px-4 py-3">
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <Loader2 className="size-4 shrink-0 animate-spin text-primary" aria-hidden="true" />
+                    Analyzing {settledCount} of {items.length} file{items.length === 1 ? "" : "s"}…
+                  </div>
+                  <StatusBar value={(settledCount / items.length) * 100} tone="neutral" />
+                </div>
               )}
-              {items.length > 1 && selected && (
-                <Button variant="outline" onClick={() => downloadBatchSummaryCsv(selected, items)}>
-                  <Download aria-hidden="true" data-icon="inline-start" />
-                  Download summary CSV
-                </Button>
+              <BatchResults items={items} />
+              {!isAnalyzing && (
+                <div className="flex flex-wrap justify-center gap-2">
+                  {selected && items.some((it) => it.status === "done") && (
+                    <Button onClick={() => downloadPredictionsCsv(selected, items)}>
+                      <Download aria-hidden="true" data-icon="inline-start" />
+                      Download predictions.csv
+                    </Button>
+                  )}
+                  {soleResult && (
+                    <Button variant="outline" onClick={() => downloadResultCsv(soleResult)}>
+                      <Download aria-hidden="true" data-icon="inline-start" />
+                      Download CSV
+                    </Button>
+                  )}
+                  {items.length > 1 && selected && (
+                    <Button variant="outline" onClick={() => downloadBatchSummaryCsv(selected, items)}>
+                      <Download aria-hidden="true" data-icon="inline-start" />
+                      Download summary CSV
+                    </Button>
+                  )}
+                  {hasError && (
+                    <Button variant="outline" onClick={handleRetry}>
+                      Try again
+                    </Button>
+                  )}
+                  <Button variant="outline" onClick={handleReset}>
+                    Check another file
+                  </Button>
+                </div>
               )}
-              {hasError && (
-                <Button variant="outline" disabled={isAnalyzing} onClick={handleRetry}>
-                  {isAnalyzing ? "Retrying…" : "Try again"}
-                </Button>
-              )}
-              <Button variant="outline" onClick={handleReset}>
-                Check another file
-              </Button>
-            </div>
-          </>
-        )}
-      </main>
-    </div>
+            </>
+          )}
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

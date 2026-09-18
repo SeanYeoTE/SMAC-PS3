@@ -1,15 +1,21 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckCircle2, AlertTriangle } from "lucide-react";
+import { CheckCircle2, AlertTriangle, ChevronDown } from "lucide-react";
+import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, XAxis, YAxis } from "recharts";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { StatusBar } from "@/components/status-bar";
 import { StatusPill } from "@/components/status-pill";
 import { formatDoorTimestamp } from "@/lib/format";
 import type { DoorResult as DoorResultData } from "@/lib/types";
+
+const chartConfig = {
+  ratio: { label: "Ratio to baseline", color: "var(--color-chart-1)" },
+} satisfies ChartConfig;
 
 function dataQualityWarnings(detail: DoorResultData["detail"]): string[] {
   const warnings: string[] = [];
@@ -49,6 +55,16 @@ export function DoorResult({ result }: { result: DoorResultData }) {
   const warnings = useMemo(() => dataQualityWarnings(detail), [detail]);
   const [sortMode, setSortMode] = useState<"abnormal" | "chronological">("abnormal");
 
+  const chartData = useMemo(
+    () =>
+      detail.per_segment.map((s, i) => ({
+        name: `${s.operation === "Open" ? "O" : "C"}${i + 1}`,
+        ratio: s.ratio,
+        abnormal: s.abnormal,
+      })),
+    [detail],
+  );
+
   const orderedSegments = useMemo(() => {
     const withIndex = segments.map((s, i) => ({ ...s, _i: i }));
     if (sortMode === "chronological") return withIndex;
@@ -74,13 +90,13 @@ export function DoorResult({ result }: { result: DoorResultData }) {
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-3">
             {allNormal ? (
-              <CheckCircle2 className="size-8 shrink-0 text-emerald-400" aria-hidden="true" />
+              <CheckCircle2 className="size-8 shrink-0 text-emerald-600" aria-hidden="true" />
             ) : (
-              <AlertTriangle className="size-8 shrink-0 text-red-400" aria-hidden="true" />
+              <AlertTriangle className="size-8 shrink-0 text-red-600" aria-hidden="true" />
             )}
             <div>
               <p className="text-2xl font-semibold">
-                <span className="font-mono tabular-nums">
+                <span className="tabular-nums">
                   {detail.n_abnormal} of {detail.n_segments}
                 </span>{" "}
                 cycles look abnormal
@@ -91,6 +107,33 @@ export function DoorResult({ result }: { result: DoorResultData }) {
           <p className="rounded-lg border-l-2 border-primary bg-muted/30 p-3.5 text-sm leading-relaxed">
             {detail.note}
           </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="eyebrow">Ratio to baseline, per cycle</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ChartContainer config={chartConfig} className="aspect-auto h-56 w-full">
+            <BarChart data={chartData} margin={{ left: -20 }}>
+              <CartesianGrid vertical={false} />
+              <XAxis dataKey="name" tickLine={false} axisLine={false} fontSize={11} />
+              <YAxis tickLine={false} axisLine={false} fontSize={11} />
+              <ReferenceLine
+                y={detail.ratio_threshold}
+                stroke="var(--destructive)"
+                strokeDasharray="4 4"
+                label={{ value: `Threshold ${detail.ratio_threshold}×`, fontSize: 11, position: "insideTopRight" }}
+              />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <Bar dataKey="ratio" radius={4}>
+                {chartData.map((d, i) => (
+                  <Cell key={i} fill={d.abnormal ? "var(--color-chart-1)" : "var(--muted-foreground)"} fillOpacity={d.abnormal ? 1 : 0.5} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ChartContainer>
         </CardContent>
       </Card>
 
@@ -130,8 +173,8 @@ export function DoorResult({ result }: { result: DoorResultData }) {
             <TableBody>
               {orderedSegments.map((s) => (
                 <TableRow key={s._i}>
-                  <TableCell className="font-mono text-sm">{formatDoorTimestamp(s.start_time)}</TableCell>
-                  <TableCell className="font-mono text-sm">{formatDoorTimestamp(s.end_time)}</TableCell>
+                  <TableCell className="text-sm">{formatDoorTimestamp(s.start_time)}</TableCell>
+                  <TableCell className="text-sm">{formatDoorTimestamp(s.end_time)}</TableCell>
                   <TableCell>
                     <StatusPill tone={s.prediction === "Normal" ? "good" : "bad"}>
                       {s.prediction}
@@ -145,8 +188,9 @@ export function DoorResult({ result }: { result: DoorResultData }) {
       </Card>
 
       <details className="group rounded-xl border border-border bg-card/60 p-4 open:ring-1 open:ring-border">
-        <summary className="eyebrow cursor-pointer select-none text-primary marker:content-none">
-          Technical details
+        <summary className="eyebrow flex cursor-pointer select-none items-center justify-between text-primary marker:content-none">
+          Technical Details
+          <ChevronDown className="size-4 shrink-0 transition-transform group-open:rotate-180" aria-hidden="true" />
         </summary>
         <div className="mt-4 flex flex-col gap-5 text-sm">
           <dl className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3">

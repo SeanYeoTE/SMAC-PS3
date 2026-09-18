@@ -1,19 +1,24 @@
-import { Snowflake } from "lucide-react";
+import { ChevronDown, Snowflake } from "lucide-react";
+import { Bar, BarChart, CartesianGrid, Cell, LabelList, XAxis, YAxis } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { StatusBar } from "@/components/status-bar";
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { StatusPill } from "@/components/status-pill";
 import { confidenceTone } from "@/lib/status";
-import { cn } from "@/lib/utils";
 import type { AcvResult as AcvResultData } from "@/lib/types";
+
+const chartConfig = {
+  score: { label: "Cabin temp vs median (°C)", color: "var(--color-chart-1)" },
+} satisfies ChartConfig;
 
 export function AcvResult({ result }: { result: AcvResultData }) {
   const { prediction, detail } = result;
   const rankedCars = result.ranked_cars.split("|");
-  const scores = Object.values(detail.scores_degC);
-  const min = Math.min(...scores);
-  const max = Math.max(...scores);
-  const span = max - min || 1;
   const tone = confidenceTone(detail.confidence);
+  const chartData = rankedCars.map((car) => ({
+    car: `Car ${car}`,
+    score: Number(detail.scores_degC[car]?.toFixed(3) ?? 0),
+    isTop: car === prediction,
+  }));
 
   return (
     <div className="flex flex-col gap-3">
@@ -24,7 +29,7 @@ export function AcvResult({ result }: { result: AcvResultData }) {
               <Snowflake className="size-8 shrink-0 text-primary" aria-hidden="true" />
               <div>
                 <p className="text-2xl font-semibold">
-                  Car <span className="font-mono tabular-nums">{prediction}</span> most likely has the leak
+                  Car <span className="tabular-nums">{prediction}</span> most likely has the leak
                 </p>
                 <p className="eyebrow mt-0.5">Air Conditioning &amp; Ventilation · Refrigerant Leak Ranking</p>
               </div>
@@ -44,25 +49,20 @@ export function AcvResult({ result }: { result: AcvResultData }) {
           <CardTitle className="eyebrow">All cars, ranked</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col gap-3">
-            {rankedCars.map((car, i) => {
-              const score = detail.scores_degC[car];
-              const pct = ((score - min) / span) * 100;
-              const isTop = i === 0;
-              return (
-                <div key={car} className="grid grid-cols-[80px_1fr_72px] items-center gap-3">
-                  <span className={cn("text-sm", isTop ? "font-semibold text-primary" : "text-muted-foreground")}>
-                    Car {car}
-                  </span>
-                  <StatusBar value={pct} tone={isTop ? "bad" : "neutral"} />
-                  <span className="text-right text-sm tabular-nums">
-                    {score >= 0 ? "+" : ""}
-                    {score.toFixed(3)} °C
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+          <ChartContainer config={chartConfig} className="aspect-auto h-56 w-full">
+            <BarChart data={chartData} layout="vertical" margin={{ left: 8 }}>
+              <CartesianGrid horizontal={false} />
+              <XAxis type="number" tickLine={false} axisLine={false} fontSize={11} unit="°C" />
+              <YAxis type="category" dataKey="car" tickLine={false} axisLine={false} fontSize={11} width={70} />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <Bar dataKey="score" radius={4}>
+                <LabelList dataKey="score" position="right" fontSize={11} formatter={(v) => `${Number(v) >= 0 ? "+" : ""}${v}°C`} />
+                {chartData.map((d, i) => (
+                  <Cell key={i} fill={d.isTop ? "var(--destructive)" : "var(--color-chart-1)"} fillOpacity={d.isTop ? 1 : 0.6} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ChartContainer>
           <p className="mt-3 text-sm text-muted-foreground">
             Score is each car&apos;s cabin temperature relative to the train median — warmer means less cooling
             capacity, consistent with a refrigerant leak.
@@ -71,8 +71,9 @@ export function AcvResult({ result }: { result: AcvResultData }) {
       </Card>
 
       <details className="group rounded-xl border border-border bg-card/60 p-4 open:ring-1 open:ring-border">
-        <summary className="eyebrow cursor-pointer select-none text-primary marker:content-none">
-          Technical details
+        <summary className="eyebrow flex cursor-pointer select-none items-center justify-between text-primary marker:content-none">
+          Technical Details
+          <ChevronDown className="size-4 shrink-0 transition-transform group-open:rotate-180" aria-hidden="true" />
         </summary>
         <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-3">
           <div>

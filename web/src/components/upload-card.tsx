@@ -1,23 +1,26 @@
 "use client";
 
 import { useId, useRef, useState } from "react";
-import { UploadCloud, FileCheck2, X } from "lucide-react";
+import { UploadCloud, FileCheck2, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SUBSYSTEM_BLURBS } from "@/lib/subsystem-meta";
 import { cn } from "@/lib/utils";
-import type { SubsystemMeta } from "@/lib/types";
+import type { SubsystemKey, SubsystemMeta } from "@/lib/types";
 
 function sameFile(a: File, b: File): boolean {
   return a.name === b.name && a.size === b.size && a.lastModified === b.lastModified;
 }
 
 export function UploadCard({
+  subsystem,
   meta,
   files,
   onFilesChange,
   onAnalyze,
   isLoading,
 }: {
+  subsystem: SubsystemKey;
   meta: SubsystemMeta;
   files: File[];
   onFilesChange: (files: File[]) => void;
@@ -59,6 +62,7 @@ export function UploadCard({
     <Card>
       <CardHeader>
         <CardTitle className="eyebrow">Upload · {meta.label}</CardTitle>
+        <CardDescription>{SUBSYSTEM_BLURBS[subsystem]}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col items-center gap-4">
         <div
@@ -84,17 +88,17 @@ export function UploadCard({
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
             dragOver
               ? "border-primary bg-primary/5"
-              : "border-white/15 bg-white/[0.02] hover:border-primary/40 hover:bg-primary/5",
+              : "border-border bg-muted/20 hover:border-primary/40 hover:bg-primary/5",
           )}
         >
           <div className="flex size-12 items-center justify-center rounded-full bg-muted">
             {files.length > 0 ? (
-              <FileCheck2 className="size-6 text-emerald-400" aria-hidden="true" />
+              <FileCheck2 className="size-6 text-emerald-600" aria-hidden="true" />
             ) : (
               <UploadCloud className="size-6 text-muted-foreground" aria-hidden="true" />
             )}
           </div>
-          <p className="font-mono font-medium">
+          <p className="font-medium">
             {files.length === 0
               ? "Drop your test files here, or click to choose one or more"
               : `${files.length} file${files.length === 1 ? "" : "s"} staged — drop more, or click to add another`}
@@ -123,7 +127,7 @@ export function UploadCard({
                 key={`${f.name}-${f.size}-${f.lastModified}`}
                 className="flex items-center gap-2 rounded-lg border border-border bg-card/60 px-3 py-1.5"
               >
-                <span className="min-w-0 flex-1 truncate font-mono text-sm">{f.name}</span>
+                <span className="min-w-0 flex-1 truncate text-sm">{f.name}</span>
                 <button
                   type="button"
                   aria-label={`Remove ${f.name}`}
@@ -152,6 +156,7 @@ export function UploadCard({
           disabled={files.length === 0 || isLoading}
           onClick={onAnalyze}
         >
+          {isLoading && <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden="true" />}
           {isLoading
             ? "Analyzing…"
             : files.length > 1
