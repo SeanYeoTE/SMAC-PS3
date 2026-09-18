@@ -8,16 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { StatusBar } from "@/components/status-bar";
 import { StatusPill } from "@/components/status-pill";
+import { formatDoorTimestamp } from "@/lib/format";
 import type { DoorResult as DoorResultData } from "@/lib/types";
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/** Backend format is "Y-M-D-H-M-S-ms" with no zero padding -> "25-Dec-2026-134530". */
-function formatDoorTimestamp(raw: string): string {
-  const [y, mo, d, h, mi, s] = raw.split("-").map(Number);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(d)}-${MONTHS[mo - 1]}-${y}-${pad(h)}${pad(mi)}${pad(s)}`;
-}
 
 function dataQualityWarnings(detail: DoorResultData["detail"]): string[] {
   const warnings: string[] = [];

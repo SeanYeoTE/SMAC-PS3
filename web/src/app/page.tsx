@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Fingerprint, TrainFront } from "lucide-react";
+import { Download, Fingerprint, TrainFront } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -11,6 +11,7 @@ import { SubsystemPicker } from "@/components/subsystem-picker";
 import { UploadCard } from "@/components/upload-card";
 import { ResultView } from "@/components/results";
 import { fetchSubsystems, predict } from "@/lib/api";
+import { downloadResultCsv } from "@/lib/csv";
 import type { PredictResult, SubsystemKey, SubsystemsResponse } from "@/lib/types";
 
 function summarizeResult(result: PredictResult | null): { label: string; bad: boolean } {
@@ -156,9 +157,15 @@ export default function Home() {
         {result && (
           <>
             <ResultView result={result} />
-            <Button variant="outline" className="self-center" onClick={handleReset}>
-              Check another file
-            </Button>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button variant="outline" onClick={() => downloadResultCsv(result)}>
+                <Download aria-hidden="true" data-icon="inline-start" />
+                Download CSV
+              </Button>
+              <Button variant="outline" onClick={handleReset}>
+                Check another file
+              </Button>
+            </div>
           </>
         )}
       </main>

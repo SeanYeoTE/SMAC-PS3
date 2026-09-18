@@ -42,6 +42,8 @@ export interface ShmResult {
   subsystem: "shm";
   prediction: number;
   detail: {
+    miners_rule_estimate: number;
+    model_vs_formula_pct: number;
     samples: number;
     rainflow_cycles: number;
     largest_amplitude: number;
