@@ -3,7 +3,7 @@
 import { useId, useRef, useState } from "react";
 import { UploadCloud, FileCheck2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { SubsystemMeta } from "@/lib/types";
 
@@ -41,6 +41,9 @@ export function UploadCard({
 
   return (
     <Card>
+      <CardHeader>
+        <CardTitle className="eyebrow">Upload · {meta.label}</CardTitle>
+      </CardHeader>
       <CardContent className="flex flex-col items-center gap-4">
         <div
           onDragOver={(e) => {
@@ -63,15 +66,19 @@ export function UploadCard({
           className={cn(
             "flex w-full flex-col items-center gap-3 rounded-xl border-2 border-dashed p-10 text-center transition-colors cursor-pointer",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-            dragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/40",
+            dragOver
+              ? "border-primary bg-primary/5"
+              : "border-white/15 bg-white/[0.02] hover:border-primary/40 hover:bg-primary/5",
           )}
         >
-          {file ? (
-            <FileCheck2 className="size-8 text-emerald-600" aria-hidden="true" />
-          ) : (
-            <UploadCloud className="size-8 text-muted-foreground" aria-hidden="true" />
-          )}
-          <p className="font-medium">
+          <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+            {file ? (
+              <FileCheck2 className="size-6 text-emerald-400" aria-hidden="true" />
+            ) : (
+              <UploadCloud className="size-6 text-muted-foreground" aria-hidden="true" />
+            )}
+          </div>
+          <p className="font-mono font-medium">
             {file ? file.name : "Drop your test file here, or click to choose one"}
           </p>
           <input
@@ -88,7 +95,7 @@ export function UploadCard({
         </div>
 
         {typeError && (
-          <p role="alert" className="text-sm font-medium text-red-600">
+          <p role="alert" className="text-sm font-medium text-red-400">
             {typeError}
           </p>
         )}

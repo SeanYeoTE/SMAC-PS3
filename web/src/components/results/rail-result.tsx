@@ -1,7 +1,7 @@
 import { TrainFront } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBar } from "@/components/status-bar";
-import { badgeTone } from "@/lib/status";
+import { StatusPill } from "@/components/status-pill";
 import type { Tone } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import type { RailResult as RailResultData } from "@/lib/types";
@@ -20,25 +20,19 @@ export function RailResult({ result }: { result: RailResultData }) {
     <div className="flex flex-col gap-4">
       <Card>
         <CardContent className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <TrainFront className="size-8 shrink-0 text-primary" aria-hidden="true" />
-            <div>
-              <p className="text-2xl font-semibold">{prediction}</p>
-              <p className="text-sm text-muted-foreground">
-                Rail Corrugation — {detail.speed_kmh} km/h at recording time
-              </p>
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <TrainFront className="size-8 shrink-0 text-primary" aria-hidden="true" />
+              <div>
+                <p className="text-2xl font-semibold">{prediction}</p>
+                <p className="eyebrow mt-0.5">Rail Corrugation · {detail.speed_kmh} km/h at recording time</p>
+              </div>
             </div>
-            <span
-              className={cn(
-                "ml-auto inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide",
-                badgeTone[classTone(prediction)],
-              )}
-            >
-              {topConfidence.toLocaleString(undefined, { style: "percent", maximumFractionDigits: 0 })}{" "}
-              sure
-            </span>
+            <StatusPill tone={classTone(prediction)} className="uppercase tracking-wide">
+              {topConfidence.toLocaleString(undefined, { style: "percent", maximumFractionDigits: 0 })} sure
+            </StatusPill>
           </div>
-          <p className="rounded-lg border-l-4 border-primary bg-muted/40 p-4 text-sm leading-relaxed">
+          <p className="rounded-lg border-l-2 border-primary bg-muted/30 p-4 text-sm leading-relaxed">
             {detail.note}
           </p>
         </CardContent>
@@ -46,7 +40,7 @@ export function RailResult({ result }: { result: RailResultData }) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Confidence by class</CardTitle>
+          <CardTitle className="eyebrow">Confidence by class</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col gap-3">
@@ -63,8 +57,8 @@ export function RailResult({ result }: { result: RailResultData }) {
         </CardContent>
       </Card>
 
-      <details className="rounded-xl border border-border bg-card p-4">
-        <summary className="cursor-pointer text-sm font-medium text-primary">
+      <details className="group rounded-xl border border-border bg-card/60 p-4 open:ring-1 open:ring-border">
+        <summary className="eyebrow cursor-pointer select-none text-primary marker:content-none">
           Technical details
         </summary>
         <div className="mt-4 flex flex-col gap-3 text-sm">

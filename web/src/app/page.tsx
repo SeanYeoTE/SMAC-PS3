@@ -1,15 +1,37 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { TrainFront } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Fingerprint, TrainFront } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatTile } from "@/components/stat-tile";
+import { StatusPill } from "@/components/status-pill";
 import { SubsystemPicker } from "@/components/subsystem-picker";
 import { UploadCard } from "@/components/upload-card";
 import { ResultView } from "@/components/results";
 import { fetchSubsystems, predict } from "@/lib/api";
 import type { PredictResult, SubsystemKey, SubsystemsResponse } from "@/lib/types";
+
+function summarizeResult(result: PredictResult | null): { label: string; bad: boolean } {
+  if (!result) return { label: "—", bad: false };
+  switch (result.subsystem) {
+    case "door":
+      return {
+        label: `${result.detail.n_abnormal}/${result.detail.n_segments} abnormal`,
+        bad: result.detail.n_abnormal > 0,
+      };
+    case "shm":
+      return {
+        label: `${(result.prediction * 100).toFixed(0)}% life used`,
+        bad: result.prediction >= 0.8,
+      };
+    case "acv":
+      return { label: `Car ${result.prediction}`, bad: true };
+    case "rail":
+      return { label: result.prediction, bad: result.prediction !== "Normal" };
+  }
+}
 
 export default function Home() {
   const [subsystems, setSubsystems] = useState<SubsystemsResponse | null>(null);
@@ -19,6 +41,7 @@ export default function Home() {
   const [result, setResult] = useState<PredictResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+  const resultSummary = useMemo(() => summarizeResult(result), [result]);
 
   useEffect(() => {
     fetchSubsystems()
@@ -56,20 +79,26 @@ export default function Home() {
   }
 
   return (
-    <div className="flex flex-1 flex-col bg-muted/20">
-      <header className="border-b border-border bg-card">
-        <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-6 sm:px-6">
-          <TrainFront className="size-7 shrink-0 text-primary" aria-hidden="true" />
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">Train Fault Prediction</h1>
-            <p className="text-sm text-muted-foreground">
-              Pick a system, upload its test file, get a plain-language diagnosis.
-            </p>
+    <div className="relative flex flex-1 flex-col bg-background">
+      <div className="bg-grid-fade pointer-events-none absolute inset-0 z-0" aria-hidden="true" />
+      <header className="relative z-10 border-b border-border bg-card/60 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-4 px-4 py-4 sm:px-6">
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/30">
+              <TrainFront className="size-5 text-primary" aria-hidden="true" />
+            </div>
+            <div>
+              <p className="eyebrow">Nebula X · Problem Statement 3</p>
+              <h1 className="text-lg font-semibold tracking-tight">Fault Intelligence Console</h1>
+            </div>
           </div>
+          <StatusPill tone={loadError ? "bad" : subsystems ? "good" : "neutral"}>
+            {loadError ? "Offline" : subsystems ? "Live" : "Connecting…"}
+          </StatusPill>
         </div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6">
+      <main className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6">
         {loadError && (
           <Alert variant="destructive">
             <AlertTitle>Couldn&apos;t reach the prediction server</AlertTitle>
@@ -86,7 +115,26 @@ export default function Home() {
         )}
 
         {subsystems && (
-          <SubsystemPicker subsystems={subsystems} selected={selected} onSelect={handleSelect} />
+          <>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <StatTile label="Subsystems Online" value={Object.keys(subsystems).length} tone="accent" />
+              <StatTile label="Selected" value={selected ? selected.toUpperCase() : "—"} />
+              <StatTile label="File Staged" value={file ? "Ready" : "—"} />
+              <StatTile
+                label="Last Result"
+                value={resultSummary.label}
+                tone={result ? (resultSummary.bad ? "bad" : "accent") : "default"}
+              />
+            </div>
+
+            <section className="flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <Fingerprint className="size-4 text-muted-foreground" aria-hidden="true" />
+                <h2 className="eyebrow">Choose a subsystem</h2>
+              </div>
+              <SubsystemPicker subsystems={subsystems} selected={selected} onSelect={handleSelect} />
+            </section>
+          </>
         )}
 
         {subsystems && selected && !result && (

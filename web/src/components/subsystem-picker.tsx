@@ -47,21 +47,25 @@ export function SubsystemPicker({
               aria-checked={isSelected}
               onClick={() => onSelect(key)}
               className={cn(
-                "flex min-h-28 flex-col items-start gap-2 rounded-xl border p-4 text-left transition-colors",
+                "relative flex min-h-28 flex-col items-start gap-2 overflow-hidden rounded-xl border bg-card p-4 pl-5 text-left transition-colors",
+                "before:absolute before:inset-y-0 before:left-0 before:w-1",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                 isSelected
-                  ? "border-primary bg-primary/5"
-                  : "border-border bg-card hover:border-primary/40 hover:bg-muted/40",
+                  ? "border-primary/40 bg-primary/5 before:bg-primary"
+                  : "border-border hover:border-primary/30 hover:bg-muted/30 before:bg-border",
               )}
             >
-              <span className="flex items-center gap-2">
-                <Icon className="size-5 text-primary" aria-hidden="true" />
-                <span className="font-semibold">{meta.label}</span>
+              <span className="flex w-full items-center gap-2">
+                <Icon className={cn("size-4.5 shrink-0", isSelected ? "text-primary" : "text-muted-foreground")} aria-hidden="true" />
+                <span className="font-mono text-xs font-semibold tracking-wide text-muted-foreground">
+                  {key.toUpperCase()}
+                </span>
+                <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-[0.65rem] font-medium text-muted-foreground">
+                  {meta.accepts.join(" / ")}
+                </span>
               </span>
+              <span className="font-semibold">{meta.label}</span>
               <span className="text-sm text-muted-foreground">{BLURBS[key]}</span>
-              <span className="mt-auto inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                {meta.accepts.join(" / ")}
-              </span>
             </button>
           );
         })}

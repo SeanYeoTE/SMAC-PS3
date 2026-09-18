@@ -23,17 +23,17 @@ export function ShmResult({ result }: { result: ShmResultData }) {
           <div className="flex flex-wrap items-center gap-3">
             <Gauge className="size-8 shrink-0 text-primary" aria-hidden="true" />
             <div>
-              <p className="text-2xl font-semibold">{pct.toFixed(1)}% of fatigue life used</p>
-              <p className="text-sm text-muted-foreground">
-                Structural Health Monitoring — cumulative damage estimate
+              <p className="text-2xl font-semibold">
+                <span className="font-mono tabular-nums">{pct.toFixed(1)}%</span> of fatigue life used
               </p>
+              <p className="eyebrow mt-0.5">Structural Health Monitoring · Cumulative Damage</p>
             </div>
           </div>
           <StatusBar value={pct} tone={tone} className="h-3" />
           <p className="text-sm text-muted-foreground">
             Estimated remaining life: <span className="font-medium text-foreground">{remainingPct.toFixed(1)}%</span>
           </p>
-          <p className="rounded-lg border-l-4 border-primary bg-muted/40 p-4 text-sm leading-relaxed">
+          <p className="rounded-lg border-l-2 border-primary bg-muted/30 p-4 text-sm leading-relaxed">
             {detail.note}
           </p>
         </CardContent>
@@ -41,7 +41,7 @@ export function ShmResult({ result }: { result: ShmResultData }) {
 
       <Card>
         <CardHeader>
-          <CardTitle>What&apos;s driving the damage</CardTitle>
+          <CardTitle className="eyebrow">What&apos;s driving the damage</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col gap-3">
@@ -62,8 +62,8 @@ export function ShmResult({ result }: { result: ShmResultData }) {
         </CardContent>
       </Card>
 
-      <details className="rounded-xl border border-border bg-card p-4">
-        <summary className="cursor-pointer text-sm font-medium text-primary">
+      <details className="group rounded-xl border border-border bg-card/60 p-4 open:ring-1 open:ring-border">
+        <summary className="eyebrow cursor-pointer select-none text-primary marker:content-none">
           Technical details
         </summary>
         <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-3">

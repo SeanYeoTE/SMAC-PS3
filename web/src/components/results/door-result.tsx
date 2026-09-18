@@ -2,8 +2,7 @@ import { CheckCircle2, AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { StatusBar } from "@/components/status-bar";
-import { badgeTone } from "@/lib/status";
-import { cn } from "@/lib/utils";
+import { StatusPill } from "@/components/status-pill";
 import type { DoorResult as DoorResultData } from "@/lib/types";
 
 export function DoorResult({ result }: { result: DoorResultData }) {
@@ -18,18 +17,21 @@ export function DoorResult({ result }: { result: DoorResultData }) {
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-3">
             {allNormal ? (
-              <CheckCircle2 className="size-8 shrink-0 text-emerald-600" aria-hidden="true" />
+              <CheckCircle2 className="size-8 shrink-0 text-emerald-400" aria-hidden="true" />
             ) : (
-              <AlertTriangle className="size-8 shrink-0 text-red-600" aria-hidden="true" />
+              <AlertTriangle className="size-8 shrink-0 text-red-400" aria-hidden="true" />
             )}
             <div>
               <p className="text-2xl font-semibold">
-                {detail.n_abnormal} of {detail.n_segments} cycles look abnormal
+                <span className="font-mono tabular-nums">
+                  {detail.n_abnormal} of {detail.n_segments}
+                </span>{" "}
+                cycles look abnormal
               </p>
-              <p className="text-sm text-muted-foreground">Train Door — open/close resistance check</p>
+              <p className="eyebrow mt-0.5">Train Door · Open/Close Resistance Check</p>
             </div>
           </div>
-          <p className="rounded-lg border-l-4 border-primary bg-muted/40 p-4 text-sm leading-relaxed">
+          <p className="rounded-lg border-l-2 border-primary bg-muted/30 p-4 text-sm leading-relaxed">
             {detail.note}
           </p>
         </CardContent>
@@ -37,7 +39,7 @@ export function DoorResult({ result }: { result: DoorResultData }) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Every cycle</CardTitle>
+          <CardTitle className="eyebrow">Every cycle</CardTitle>
         </CardHeader>
         <CardContent>
           <Table>
@@ -54,14 +56,9 @@ export function DoorResult({ result }: { result: DoorResultData }) {
                   <TableCell className="font-mono text-xs">{s.start_time}</TableCell>
                   <TableCell className="font-mono text-xs">{s.end_time}</TableCell>
                   <TableCell>
-                    <span
-                      className={cn(
-                        "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                        badgeTone[s.prediction === "Normal" ? "good" : "bad"],
-                      )}
-                    >
+                    <StatusPill tone={s.prediction === "Normal" ? "good" : "bad"}>
                       {s.prediction}
-                    </span>
+                    </StatusPill>
                   </TableCell>
                 </TableRow>
               ))}
@@ -70,8 +67,8 @@ export function DoorResult({ result }: { result: DoorResultData }) {
         </CardContent>
       </Card>
 
-      <details className="rounded-xl border border-border bg-card p-4">
-        <summary className="cursor-pointer text-sm font-medium text-primary">
+      <details className="group rounded-xl border border-border bg-card/60 p-4 open:ring-1 open:ring-border">
+        <summary className="eyebrow cursor-pointer select-none text-primary marker:content-none">
           Technical details
         </summary>
         <div className="mt-4 flex flex-col gap-5 text-sm">
