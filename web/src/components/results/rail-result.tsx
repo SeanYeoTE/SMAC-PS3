@@ -1,3 +1,4 @@
+import { RcaText } from "@/components/results/rca-text";
 import { TrainFront, AlertTriangle, ChevronDown } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, XAxis, YAxis } from "recharts";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
@@ -67,9 +68,7 @@ export function RailResult({ result }: { result: RailResultData }) {
               {topConfidence.toLocaleString(undefined, { style: "percent", maximumFractionDigits: 0 })} sure
             </StatusPill>
           </div>
-          <p className="rounded-lg border-l-2 border-primary bg-muted/30 p-3.5 text-sm leading-relaxed">
-            {detail.note}
-          </p>
+          <RcaText result={result} />
         </CardContent>
       </Card>
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { RcaText } from "@/components/results/rca-text";
+
 import { useMemo, useState } from "react";
 import { CheckCircle2, AlertTriangle, ChevronDown } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, XAxis, YAxis } from "recharts";
@@ -104,9 +106,7 @@ export function DoorResult({ result }: { result: DoorResultData }) {
               <p className="eyebrow mt-0.5">Train Door · Open/Close Resistance Check</p>
             </div>
           </div>
-          <p className="rounded-lg border-l-2 border-primary bg-muted/30 p-3.5 text-sm leading-relaxed">
-            {detail.note}
-          </p>
+          <RcaText result={result} />
         </CardContent>
       </Card>
 
