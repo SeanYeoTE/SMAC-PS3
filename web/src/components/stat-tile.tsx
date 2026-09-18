@@ -15,16 +15,16 @@ export function StatTile({
   return (
     <div
       className={cn(
-        "rounded-xl border border-border bg-card px-3.5 py-2.5 ring-1 ring-foreground/5",
+        "rounded-xl border border-border bg-card px-3.5 py-2.5 shadow-sm",
         className,
       )}
     >
       <p className="eyebrow truncate">{label}</p>
       <p
         className={cn(
-          "mt-1 truncate font-mono text-2xl font-semibold tabular-nums",
+          "mt-1 truncate text-2xl font-semibold tabular-nums",
           tone === "accent" && "text-primary",
-          tone === "bad" && "text-red-400",
+          tone === "bad" && "text-red-600",
         )}
       >
         {value}

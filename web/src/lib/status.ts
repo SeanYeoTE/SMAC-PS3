@@ -1,37 +1,44 @@
 export type Tone = "good" | "bad" | "warn" | "neutral";
 
 export const badgeTone: Record<Tone, string> = {
-  good: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
-  bad: "border-red-500/30 bg-red-500/10 text-red-300",
-  warn: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+  good: "border-emerald-600/25 bg-emerald-600/10 text-emerald-700",
+  bad: "border-red-600/25 bg-red-600/10 text-red-700",
+  warn: "border-amber-600/25 bg-amber-500/15 text-amber-700",
   neutral: "border-border bg-muted text-foreground",
 };
 
 export const dotTone: Record<Tone, string> = {
-  good: "bg-emerald-400",
-  bad: "bg-red-400",
-  warn: "bg-amber-400",
+  good: "bg-emerald-600",
+  bad: "bg-red-600",
+  warn: "bg-amber-600",
   neutral: "bg-muted-foreground",
 };
 
+export const textTone: Record<Tone, string> = {
+  good: "text-emerald-700",
+  bad: "text-red-700",
+  warn: "text-amber-700",
+  neutral: "text-foreground",
+};
+
 export const barTone: Record<Tone, string> = {
-  good: "bg-emerald-400 shadow-[0_0_10px_theme(colors.emerald.400/60%)]",
-  bad: "bg-red-400 shadow-[0_0_10px_theme(colors.red.400/60%)]",
-  warn: "bg-amber-400 shadow-[0_0_10px_theme(colors.amber.400/60%)]",
-  neutral: "bg-primary shadow-[0_0_10px_theme(colors.cyan.400/40%)]",
+  good: "bg-emerald-600",
+  bad: "bg-red-600",
+  warn: "bg-amber-500",
+  neutral: "bg-primary",
 };
 
 export const ringTone: Record<Tone, string> = {
-  good: "border-emerald-500/30",
-  bad: "border-red-500/30",
-  warn: "border-amber-500/30",
+  good: "border-emerald-600/25",
+  bad: "border-red-600/25",
+  warn: "border-amber-600/25",
   neutral: "border-border",
 };
 
 export const leftBarTone: Record<Tone, string> = {
-  good: "before:bg-emerald-400",
-  bad: "before:bg-red-400",
-  warn: "before:bg-amber-400",
+  good: "before:bg-emerald-600",
+  bad: "before:bg-red-600",
+  warn: "before:bg-amber-600",
   neutral: "before:bg-border",
 };
 

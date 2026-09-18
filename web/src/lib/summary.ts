@@ -71,5 +71,7 @@ export function summarizeResult(result: PredictResult): ResultSummary {
 
 /** Count of batch items that need attention: errors, plus any "done" result that isn't clean. */
 export function countFlagged(items: BatchItem[]): number {
-  return items.filter((it) => it.status === "error" || summarizeResult(it.result).bad).length;
+  return items.filter(
+    (it) => it.status === "error" || (it.status === "done" && summarizeResult(it.result).bad),
+  ).length;
 }

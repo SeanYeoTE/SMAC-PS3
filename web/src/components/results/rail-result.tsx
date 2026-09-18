@@ -1,10 +1,11 @@
-import { TrainFront, AlertTriangle } from "lucide-react";
+import { TrainFront, AlertTriangle, ChevronDown } from "lucide-react";
+import { Bar, BarChart, CartesianGrid, Cell, LabelList, XAxis, YAxis } from "recharts";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { StatusBar } from "@/components/status-bar";
 import { StatusPill } from "@/components/status-pill";
 import type { Tone } from "@/lib/status";
-import { cn } from "@/lib/utils";
 import type { RailResult as RailResultData } from "@/lib/types";
 
 const LOW_CONFIDENCE = 0.7;
@@ -12,6 +13,10 @@ const LOW_CONFIDENCE = 0.7;
 function classTone(label: string): Tone {
   return label === "Normal" ? "good" : "bad";
 }
+
+const confidenceChartConfig = {
+  confidence: { label: "Confidence", color: "var(--color-chart-1)" },
+} satisfies ChartConfig;
 
 export function RailResult({ result }: { result: RailResultData }) {
   const { prediction, detail } = result;
@@ -73,23 +78,38 @@ export function RailResult({ result }: { result: RailResultData }) {
           <CardTitle className="eyebrow">Confidence by class</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col gap-3">
-            {confidenceEntries.map(([label, prob]) => (
-              <div key={label} className="grid grid-cols-[80px_1fr_48px] items-center gap-3">
-                <span className={cn("text-sm", label === prediction ? "font-semibold text-primary" : "text-muted-foreground")}>
-                  {label}
-                </span>
-                <StatusBar value={prob * 100} tone={label === prediction ? classTone(label) : "neutral"} />
-                <span className="text-right text-sm tabular-nums">{(prob * 100).toFixed(0)}%</span>
-              </div>
-            ))}
-          </div>
+          <ChartContainer config={confidenceChartConfig} className="aspect-auto h-48 w-full">
+            <BarChart
+              data={confidenceEntries.map(([label, prob]) => ({
+                label,
+                confidence: Number((prob * 100).toFixed(1)),
+              }))}
+              layout="vertical"
+              margin={{ left: 8 }}
+            >
+              <CartesianGrid horizontal={false} />
+              <XAxis type="number" domain={[0, 100]} tickLine={false} axisLine={false} fontSize={11} unit="%" />
+              <YAxis type="category" dataKey="label" tickLine={false} axisLine={false} fontSize={11} width={70} />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <Bar dataKey="confidence" radius={4}>
+                <LabelList dataKey="confidence" position="right" fontSize={11} formatter={(v) => `${v}%`} />
+                {confidenceEntries.map(([label], i) => (
+                  <Cell
+                    key={i}
+                    fill={label === prediction ? (classTone(label) === "bad" ? "var(--destructive)" : "var(--color-chart-2)") : "var(--muted-foreground)"}
+                    fillOpacity={label === prediction ? 1 : 0.4}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ChartContainer>
         </CardContent>
       </Card>
 
       <details className="group rounded-xl border border-border bg-card/60 p-4 open:ring-1 open:ring-border">
-        <summary className="eyebrow cursor-pointer select-none text-primary marker:content-none">
-          Technical details
+        <summary className="eyebrow flex cursor-pointer select-none items-center justify-between text-primary marker:content-none">
+          Technical Details
+          <ChevronDown className="size-4 shrink-0 transition-transform group-open:rotate-180" aria-hidden="true" />
         </summary>
         <div className="mt-4 flex flex-col gap-3 text-sm">
           <div className="grid grid-cols-[80px_1fr_72px] items-center gap-3">

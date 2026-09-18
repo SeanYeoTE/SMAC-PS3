@@ -89,6 +89,8 @@ export type PredictResult = DoorResult | ShmResult | AcvResult | RailResult;
 
 /** One file's outcome in a (possibly multi-file) analysis batch. */
 export type BatchItem =
+  | { file: File; status: "pending" }
+  | { file: File; status: "processing" }
   | { file: File; status: "done"; result: PredictResult }
   | { file: File; status: "error"; error: string };
 

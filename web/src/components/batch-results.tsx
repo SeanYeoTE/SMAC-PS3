@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, ChevronDown, Download } from "lucide-react";
+import { AlertTriangle, ChevronDown, Download, Loader2 } from "lucide-react";
+import { Bar, BarChart, CartesianGrid, Cell, LabelList, XAxis, YAxis } from "recharts";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { StatusBar } from "@/components/status-bar";
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { StatusPill } from "@/components/status-pill";
 import { ResultView } from "@/components/results";
 import { downloadResultCsv } from "@/lib/csv";
@@ -25,6 +26,17 @@ function summaryOf(item: BatchItem): ResultSummary | null {
   return item.status === "done" ? summarizeResult(item.result) : null;
 }
 
+const compareChartConfig = {
+  severityPct: { label: "Severity" },
+} satisfies ChartConfig;
+
+const toneFill: Record<ResultSummary["tone"], string> = {
+  good: "var(--color-chart-2)",
+  bad: "var(--destructive)",
+  warn: "var(--color-chart-4)",
+  neutral: "var(--color-chart-1)",
+};
+
 export function BatchResults({ items }: { items: BatchItem[] }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -34,6 +46,14 @@ export function BatchResults({ items }: { items: BatchItem[] }) {
 
   if (items.length === 1) {
     const item = items[0];
+    if (item.status === "pending" || item.status === "processing") {
+      return (
+        <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-6 text-sm text-muted-foreground">
+          <Loader2 className="size-4 shrink-0 animate-spin text-primary" aria-hidden="true" />
+          {item.status === "processing" ? "Analyzing…" : "Queued…"}
+        </div>
+      );
+    }
     return item.status === "error" ? (
       <Alert variant="destructive">
         <AlertTitle>Couldn&apos;t analyze this file</AlertTitle>
@@ -98,17 +118,40 @@ export function BatchResults({ items }: { items: BatchItem[] }) {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-col gap-3">
-              {compareRows.map(({ item, summary, i }) => (
-                <div key={i} className="grid grid-cols-[1fr_2fr_48px] items-center gap-3">
-                  <span className="min-w-0 truncate text-sm text-muted-foreground" title={item.file.name}>
-                    {item.file.name}
-                  </span>
-                  <StatusBar value={summary.severityPct} tone={summary.tone} />
-                  <span className="text-right text-sm tabular-nums">{summary.severityPct.toFixed(0)}%</span>
-                </div>
-              ))}
-            </div>
+            <ChartContainer
+              config={compareChartConfig}
+              className="aspect-auto w-full"
+              style={{ height: Math.max(compareRows.length * 32, 96) }}
+            >
+              <BarChart
+                data={compareRows.map(({ item, summary }) => ({
+                  name: item.file.name,
+                  severityPct: Number(summary.severityPct.toFixed(1)),
+                  tone: summary.tone,
+                }))}
+                layout="vertical"
+                margin={{ left: 8 }}
+              >
+                <CartesianGrid horizontal={false} />
+                <XAxis type="number" domain={[0, 100]} tickLine={false} axisLine={false} fontSize={11} unit="%" />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  tickLine={false}
+                  axisLine={false}
+                  fontSize={11}
+                  width={120}
+                  tickFormatter={(v: string) => (v.length > 16 ? `${v.slice(0, 15)}…` : v)}
+                />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Bar dataKey="severityPct" radius={4}>
+                  <LabelList dataKey="severityPct" position="right" fontSize={11} formatter={(v) => `${v}%`} />
+                  {compareRows.map(({ summary, i }) => (
+                    <Cell key={i} fill={toneFill[summary.tone]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ChartContainer>
             <p className="mt-3 text-sm text-muted-foreground">
               {compareRows[0].summary.severityLabel} — higher means more concerning.
               {compareRows.some((r) => r.summary.remainingLifePct !== undefined) &&
@@ -138,10 +181,20 @@ export function BatchResults({ items }: { items: BatchItem[] }) {
                 <button
                   type="button"
                   className="flex min-w-0 flex-1 items-center gap-3 text-left"
-                  onClick={() => toggle(expanded, setExpanded, i)}
+                  onClick={() => (item.status === "done" || item.status === "error") && toggle(expanded, setExpanded, i)}
                   aria-expanded={expanded.has(i)}
+                  disabled={item.status === "pending" || item.status === "processing"}
                 >
-                  <span className="min-w-0 flex-1 truncate font-mono text-sm">{item.file.name}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm">{item.file.name}</span>
+                  {item.status === "processing" && (
+                    <span className="flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground">
+                      <Loader2 className="size-3.5 shrink-0 animate-spin text-primary" aria-hidden="true" />
+                      Analyzing…
+                    </span>
+                  )}
+                  {item.status === "pending" && (
+                    <span className="shrink-0 text-sm text-muted-foreground">Queued…</span>
+                  )}
                   {item.status === "error" && <StatusPill tone="bad">Failed</StatusPill>}
                   {summary && (
                     <>
@@ -173,16 +226,17 @@ export function BatchResults({ items }: { items: BatchItem[] }) {
                   </Button>
                 )}
               </div>
-              {expanded.has(i) && (
+              {expanded.has(i) && item.status === "error" && (
                 <div className="border-t border-border p-3">
-                  {item.status === "error" ? (
-                    <p className="flex items-center gap-2 text-sm text-red-400">
-                      <AlertTriangle className="size-4 shrink-0" aria-hidden="true" />
-                      {item.error}
-                    </p>
-                  ) : (
-                    <ResultView result={item.result} />
-                  )}
+                  <p className="flex items-center gap-2 text-sm text-red-600">
+                    <AlertTriangle className="size-4 shrink-0" aria-hidden="true" />
+                    {item.error}
+                  </p>
+                </div>
+              )}
+              {expanded.has(i) && item.status === "done" && (
+                <div className="border-t border-border p-3">
+                  <ResultView result={item.result} />
                 </div>
               )}
             </CardContent>
