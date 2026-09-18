@@ -16,15 +16,24 @@ from ps3 import predict
 
 app = FastAPI(title="NebulaX PS3 - Fault Prediction")
 
-# The Next.js dev server proxies through this via next.config.ts rewrites,
-# so same-origin browser requests never hit CORS. This only matters if the
-# frontend is ever pointed at the API directly (e.g. a different dev port).
+# The Next.js server proxies through this via next.config.ts rewrites (see
+# PS3_API_ORIGIN there), so same-origin browser requests never hit CORS.
+# This only matters if something calls the API directly cross-origin (a
+# different dev port, Swagger UI on another host). ALLOWED_ORIGINS is a
+# comma-separated list; set it on the Cloud Run service once the frontend's
+# URL is known.
+_default_origins = "http://localhost:3000,http://127.0.0.1:3000"
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=os.environ.get("ALLOWED_ORIGINS", _default_origins).split(","),
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+
+@app.get("/health")
+def health():
+    return {"status": "healthy"}
 
 
 def _jsonable(value):

@@ -1,0 +1,22 @@
+# Backend Docker build context (see Dockerfile at repo root). Only
+# app/, ps3/ and requirements.txt are actually COPYed; everything else
+# here just keeps the build context small and avoids invalidating the
+# Docker layer cache on unrelated changes.
+web/
+.git/
+.gitignore
+.claude/
+.venv/
+.venv-test/
+__pycache__/
+*.pyc
+*.pyo
+rail_feats_v2.pkl
+submission/
+charts/
+data/
+02_Datasets/
+*.md
+.DS_Store
+
+# Do NOT ignore: ps3/model_rail.joblib, ps3/params_shm.json -- required at runtime.

@@ -414,6 +414,56 @@ only `http://localhost:3000` needs to be open. `GET /api/subsystems` lists
 what each subsystem accepts; `POST /api/predict/{subsystem}` takes a
 multipart file upload and returns the same JSON shape `predict.run` does.
 
+## Deploying to Google Cloud
+
+Two Cloud Run services (frontend, backend), built by Cloud Build and stored
+in Artifact Registry. This deviates from a generic frontend/backend
+monorepo split in one way: `app/` (backend) and `ps3/` stay at the repo
+root instead of moving under a `backend/` folder, because `fit_shm.py`,
+`fit_rail.py` and `make_submissions.py` already import `ps3` assuming it's
+a root-level package. The backend `Dockerfile` and `.dockerignore` live at
+the repo root for the same reason; the frontend's are under `web/`.
+
+**One-time project setup:**
+
+```bash
+gcloud auth login
+gcloud config set project YOUR_PROJECT_ID
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com
+gcloud artifacts repositories create nebulax-containers \
+  --repository-format=docker --location=asia-southeast1
+```
+
+**Manual deploy (before CI/CD triggers exist):**
+
+```bash
+# Backend
+gcloud builds submit --config cloudbuild.backend.yaml
+# copy the printed nebulax-api URL, then:
+gcloud run services update nebulax-api --region asia-southeast1 \
+  --set-env-vars ALLOWED_ORIGINS=https://YOUR-FRONTEND-URL.run.app
+
+# Frontend -- PS3_API_ORIGIN is read server-side at container start (by
+# next.config.ts's rewrites()), so it's a plain Cloud Run env var, not a
+# NEXT_PUBLIC_* build-time one, and the backend URL is never exposed to
+# the browser.
+gcloud run deploy nebulax-frontend --region asia-southeast1 \
+  --allow-unauthenticated \
+  --set-env-vars PS3_API_ORIGIN=https://YOUR-BACKEND-URL.run.app \
+  --source web
+```
+
+**CI/CD:** connect this GitHub repo in Cloud Build > Triggers, one trigger
+per config file (`cloudbuild.backend.yaml` with an include filter on
+`app/**`, `ps3/**`, `requirements.txt`, `Dockerfile`; `cloudbuild.frontend.yaml`
+with an include filter on `web/**`), so a frontend-only change doesn't
+rebuild the ML backend and vice versa.
+
+`GET /health` on the backend is for Cloud Run/manual liveness checks.
+Start the backend at `--memory 2Gi` (Rail's FFT features are heavier than
+a typical REST request); raise `--timeout` only if real predictions
+measurably exceed the default.
+
 ## Repository layout
 
 ```
@@ -431,4 +481,9 @@ submission/             four formatted CSVs
 charts/                 figures used in this README
 app/main.py             FastAPI wrapper around ps3.predict
 web/                    Next.js + shadcn/ui upload-and-diagnose frontend
+Dockerfile, .dockerignore          backend container (context: repo root)
+web/Dockerfile, web/.dockerignore  frontend container (context: web/)
+cloudbuild.backend.yaml            builds+deploys nebulax-api
+cloudbuild.frontend.yaml           builds+deploys nebulax-frontend
+setup.sh                           checks/installs Node.js + Python locally
 ```
