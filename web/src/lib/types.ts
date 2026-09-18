@@ -42,6 +42,8 @@ export interface ShmResult {
   subsystem: "shm";
   prediction: number;
   detail: {
+    miners_rule_estimate: number;
+    model_vs_formula_pct: number;
     samples: number;
     rainflow_cycles: number;
     largest_amplitude: number;
@@ -78,10 +80,16 @@ export interface RailResult {
     side_I_rms: number;
     side_II_rms: number;
     side_I_over_II: number;
+    stationary: boolean;
     note: string;
   };
 }
 
 export type PredictResult = DoorResult | ShmResult | AcvResult | RailResult;
+
+/** One file's outcome in a (possibly multi-file) analysis batch. */
+export type BatchItem =
+  | { file: File; status: "done"; result: PredictResult }
+  | { file: File; status: "error"; error: string };
 
 export class ApiError extends Error {}

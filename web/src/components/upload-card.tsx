@@ -1,22 +1,26 @@
 "use client";
 
 import { useId, useRef, useState } from "react";
-import { UploadCloud, FileCheck2 } from "lucide-react";
+import { UploadCloud, FileCheck2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { SubsystemMeta } from "@/lib/types";
 
+function sameFile(a: File, b: File): boolean {
+  return a.name === b.name && a.size === b.size && a.lastModified === b.lastModified;
+}
+
 export function UploadCard({
   meta,
-  file,
-  onFileSelected,
+  files,
+  onFilesChange,
   onAnalyze,
   isLoading,
 }: {
   meta: SubsystemMeta;
-  file: File | null;
-  onFileSelected: (file: File | null) => void;
+  files: File[];
+  onFilesChange: (files: File[]) => void;
   onAnalyze: () => void;
   isLoading: boolean;
 }) {
@@ -25,22 +29,37 @@ export function UploadCard({
   const inputRef = useRef<HTMLInputElement>(null);
   const inputId = useId();
 
-  function acceptFile(candidate: File | null) {
-    if (!candidate) return;
-    const ext = "." + candidate.name.split(".").pop()?.toLowerCase();
-    if (!meta.accepts.includes(ext)) {
-      setTypeError(
-        `${meta.label} needs a ${meta.accepts.join(" or ")} file — "${candidate.name}" is a ${ext} file.`,
-      );
-      onFileSelected(null);
-      return;
+  function acceptFiles(candidates: File[]) {
+    if (candidates.length === 0) return;
+    const valid: File[] = [];
+    const invalidNames: string[] = [];
+    for (const candidate of candidates) {
+      const ext = "." + candidate.name.split(".").pop()?.toLowerCase();
+      if (meta.accepts.includes(ext)) valid.push(candidate);
+      else invalidNames.push(candidate.name);
     }
-    setTypeError(null);
-    onFileSelected(candidate);
+    setTypeError(
+      invalidNames.length > 0
+        ? `${meta.label} needs a ${meta.accepts.join(" or ")} file — skipped ${invalidNames.map((n) => `"${n}"`).join(", ")}.`
+        : null,
+    );
+    if (valid.length === 0) return;
+    const merged = [...files];
+    for (const candidate of valid) {
+      if (!merged.some((f) => sameFile(f, candidate))) merged.push(candidate);
+    }
+    onFilesChange(merged);
+  }
+
+  function removeFile(target: File) {
+    onFilesChange(files.filter((f) => !sameFile(f, target)));
   }
 
   return (
     <Card>
+      <CardHeader>
+        <CardTitle className="eyebrow">Upload · {meta.label}</CardTitle>
+      </CardHeader>
       <CardContent className="flex flex-col items-center gap-4">
         <div
           onDragOver={(e) => {
@@ -51,7 +70,7 @@ export function UploadCard({
           onDrop={(e) => {
             e.preventDefault();
             setDragOver(false);
-            acceptFile(e.dataTransfer.files?.[0] ?? null);
+            acceptFiles(Array.from(e.dataTransfer.files ?? []));
           }}
           onClick={() => inputRef.current?.click()}
           onKeyDown={(e) => {
@@ -63,32 +82,66 @@ export function UploadCard({
           className={cn(
             "flex w-full flex-col items-center gap-3 rounded-xl border-2 border-dashed p-10 text-center transition-colors cursor-pointer",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-            dragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/40",
+            dragOver
+              ? "border-primary bg-primary/5"
+              : "border-white/15 bg-white/[0.02] hover:border-primary/40 hover:bg-primary/5",
           )}
         >
-          {file ? (
-            <FileCheck2 className="size-8 text-emerald-600" aria-hidden="true" />
-          ) : (
-            <UploadCloud className="size-8 text-muted-foreground" aria-hidden="true" />
-          )}
-          <p className="font-medium">
-            {file ? file.name : "Drop your test file here, or click to choose one"}
+          <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+            {files.length > 0 ? (
+              <FileCheck2 className="size-6 text-emerald-400" aria-hidden="true" />
+            ) : (
+              <UploadCloud className="size-6 text-muted-foreground" aria-hidden="true" />
+            )}
+          </div>
+          <p className="font-mono font-medium">
+            {files.length === 0
+              ? "Drop your test files here, or click to choose one or more"
+              : `${files.length} file${files.length === 1 ? "" : "s"} staged — drop more, or click to add another`}
           </p>
           <input
             ref={inputRef}
             id={inputId}
             type="file"
+            multiple
             accept={meta.accepts.join(",")}
             className="sr-only"
-            onChange={(e) => acceptFile(e.target.files?.[0] ?? null)}
+            onChange={(e) => {
+              acceptFiles(Array.from(e.target.files ?? []));
+              e.target.value = "";
+            }}
           />
           <p id={`${inputId}-hint`} className="text-sm text-muted-foreground">
             Accepted format: {meta.accepts.join(" or ")}
           </p>
         </div>
 
+        {files.length > 0 && (
+          <ul className="flex w-full flex-col gap-1.5">
+            {files.map((f) => (
+              <li
+                key={`${f.name}-${f.size}-${f.lastModified}`}
+                className="flex items-center gap-2 rounded-lg border border-border bg-card/60 px-3 py-1.5"
+              >
+                <span className="min-w-0 flex-1 truncate font-mono text-sm">{f.name}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${f.name}`}
+                  className="shrink-0 rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    removeFile(f);
+                  }}
+                >
+                  <X className="size-3.5" aria-hidden="true" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
         {typeError && (
-          <p role="alert" className="text-sm font-medium text-red-600">
+          <p role="alert" className="text-sm font-medium text-red-400">
             {typeError}
           </p>
         )}
@@ -96,10 +149,14 @@ export function UploadCard({
         <Button
           size="lg"
           className="h-11 w-full px-8 text-base sm:w-auto"
-          disabled={!file || isLoading}
+          disabled={files.length === 0 || isLoading}
           onClick={onAnalyze}
         >
-          {isLoading ? "Analyzing…" : "Analyze"}
+          {isLoading
+            ? "Analyzing…"
+            : files.length > 1
+              ? `Analyze ${files.length} files`
+              : "Analyze"}
         </Button>
       </CardContent>
     </Card>

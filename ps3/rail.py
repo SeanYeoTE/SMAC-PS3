@@ -146,11 +146,10 @@ def predict(path: str) -> dict:
             "side_I_rms": round(float(f["I_rms"]), 5),
             "side_II_rms": round(float(f["II_rms"]), 5),
             "side_I_over_II": round(ratio, 3),
+            "stationary": bool(f["speed"] < 5),
             "note": ("Side I vibration is higher" if ratio > 1.05 else
                      "Side II vibration is higher" if ratio < 0.95 else
                      "Both sides comparable") +
-                    f"; recording at {f['speed']:.0f} km/h."
-                    + ("  Stationary recording: spectral features are unreliable."
-                       if f["speed"] < 5 else ""),
+                    f"; recording at {f['speed']:.0f} km/h.",
         },
     }

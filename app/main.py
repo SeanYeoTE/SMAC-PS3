@@ -4,6 +4,7 @@ One JSON endpoint per PS3 subsystem. The Next.js app in web/ is the
 frontend and proxies /api/* to this server; this file only handles the
 file upload and JSON shape -- all prediction logic stays in ps3/predict.py.
 """
+import asyncio
 import os
 import tempfile
 
@@ -75,7 +76,10 @@ async def run_prediction(subsystem: str, file: UploadFile = File(...)):
         tmp_path = tmp.name
 
     try:
-        result = predict.run(key, tmp_path)
+        # predict.run is CPU-bound sync code (pandas/numpy/sklearn); run it off
+        # the event loop so concurrent uploads (e.g. a multi-file batch from the
+        # UI) don't serialize behind each other on a single request at a time.
+        result = await asyncio.to_thread(predict.run, key, tmp_path)
     except Exception as exc:
         raise HTTPException(
             422, f"Couldn't read this file as {meta['label']} data: {exc}")
