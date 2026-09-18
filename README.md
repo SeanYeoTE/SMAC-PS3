@@ -409,10 +409,19 @@ cd web && npm install
 npm run dev                            # frontend, http://localhost:3000
 ```
 
-The frontend proxies `/api/*` to the backend (see `web/next.config.ts`), so
-only `http://localhost:3000` needs to be open. `GET /api/subsystems` lists
-what each subsystem accepts; `POST /api/predict/{subsystem}` takes a
-multipart file upload and returns the same JSON shape `predict.run` does.
+The frontend proxies `/api/*` to the backend via a runtime route handler
+(`web/src/app/api/[...path]/route.ts`, reading `PS3_API_ORIGIN`), so only
+`http://localhost:3000` needs to be open. `GET /api/subsystems` lists what
+each subsystem accepts; `POST /api/predict/{subsystem}` takes a multipart
+file upload and returns the same JSON shape `predict.run` does.
+
+This is a plain request-time proxy, not `next.config.ts` rewrites: in this
+Next.js version, rewrites are resolved once at `next build` (baking in
+whatever `PS3_API_ORIGIN` was set at build time, not the deployed
+container's) and run through the same buffered proxy layer that caps
+request bodies at 10MB by default -- too small for a ~15MB Rail upload.
+The route handler reads the env var per-request and streams the body
+straight through instead of buffering it.
 
 ## Deploying to Google Cloud
 
@@ -431,7 +440,7 @@ gcloud auth login
 gcloud config set project YOUR_PROJECT_ID
 gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com
 gcloud artifacts repositories create nebulax-containers \
-  --repository-format=docker --location=asia-southeast1
+  --repository-format=docker --location=us-central1
 ```
 
 **Manual deploy (before CI/CD triggers exist):**
@@ -440,14 +449,14 @@ gcloud artifacts repositories create nebulax-containers \
 # Backend
 gcloud builds submit --config cloudbuild.backend.yaml
 # copy the printed nebulax-api URL, then:
-gcloud run services update nebulax-api --region asia-southeast1 \
+gcloud run services update nebulax-api --region us-central1 \
   --set-env-vars ALLOWED_ORIGINS=https://YOUR-FRONTEND-URL.run.app
 
-# Frontend -- PS3_API_ORIGIN is read server-side at container start (by
-# next.config.ts's rewrites()), so it's a plain Cloud Run env var, not a
-# NEXT_PUBLIC_* build-time one, and the backend URL is never exposed to
-# the browser.
-gcloud run deploy nebulax-frontend --region asia-southeast1 \
+# Frontend -- PS3_API_ORIGIN is read server-side, per-request, by the
+# route handler at web/src/app/api/[...path]/route.ts, so it's a plain
+# Cloud Run env var, not a NEXT_PUBLIC_* build-time one, and the backend
+# URL is never exposed to the browser.
+gcloud run deploy nebulax-frontend --region us-central1 \
   --allow-unauthenticated \
   --set-env-vars PS3_API_ORIGIN=https://YOUR-BACKEND-URL.run.app \
   --source web

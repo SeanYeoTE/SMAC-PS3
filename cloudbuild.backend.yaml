@@ -8,13 +8,13 @@ steps:
       - -f
       - Dockerfile
       - -t
-      - asia-southeast1-docker.pkg.dev/$PROJECT_ID/nebulax-containers/nebulax-api:$COMMIT_SHA
+      - us-central1-docker.pkg.dev/$PROJECT_ID/nebulax-containers/nebulax-api:$BUILD_ID
       - .
 
   - name: gcr.io/cloud-builders/docker
     args:
       - push
-      - asia-southeast1-docker.pkg.dev/$PROJECT_ID/nebulax-containers/nebulax-api:$COMMIT_SHA
+      - us-central1-docker.pkg.dev/$PROJECT_ID/nebulax-containers/nebulax-api:$BUILD_ID
 
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: gcloud
@@ -23,9 +23,9 @@ steps:
       - deploy
       - nebulax-api
       - --image
-      - asia-southeast1-docker.pkg.dev/$PROJECT_ID/nebulax-containers/nebulax-api:$COMMIT_SHA
+      - us-central1-docker.pkg.dev/$PROJECT_ID/nebulax-containers/nebulax-api:$BUILD_ID
       - --region
-      - asia-southeast1
+      - us-central1
       - --platform
       - managed
       - --allow-unauthenticated
@@ -33,4 +33,4 @@ steps:
       - 2Gi
 
 images:
-  - asia-southeast1-docker.pkg.dev/$PROJECT_ID/nebulax-containers/nebulax-api:$COMMIT_SHA
+  - us-central1-docker.pkg.dev/$PROJECT_ID/nebulax-containers/nebulax-api:$BUILD_ID
