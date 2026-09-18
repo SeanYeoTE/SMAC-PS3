@@ -1,3 +1,4 @@
+import { RcaText } from "@/components/results/rca-text";
 import { ChevronDown, Gauge } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, LabelList, XAxis, YAxis } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,9 +40,7 @@ export function ShmResult({ result }: { result: ShmResultData }) {
           <p className="text-sm text-muted-foreground">
             Estimated remaining life: <span className="font-medium text-foreground">{remainingPct.toFixed(1)}%</span>
           </p>
-          <p className="rounded-lg border-l-2 border-primary bg-muted/30 p-3.5 text-sm leading-relaxed">
-            {detail.note}
-          </p>
+          <RcaText result={result} />
         </CardContent>
       </Card>
 

@@ -1,3 +1,4 @@
+import { RcaText } from "@/components/results/rca-text";
 import { ChevronDown, Snowflake } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, XAxis, YAxis } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,9 +39,7 @@ export function AcvResult({ result }: { result: AcvResultData }) {
               {detail.confidence} confidence
             </StatusPill>
           </div>
-          <p className="rounded-lg border-l-2 border-primary bg-muted/30 p-3.5 text-sm leading-relaxed">
-            {detail.note}
-          </p>
+          <RcaText result={result} />
         </CardContent>
       </Card>
 
