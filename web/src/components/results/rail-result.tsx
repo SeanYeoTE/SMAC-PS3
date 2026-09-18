@@ -1,10 +1,13 @@
-import { TrainFront } from "lucide-react";
+import { TrainFront, AlertTriangle } from "lucide-react";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBar } from "@/components/status-bar";
 import { StatusPill } from "@/components/status-pill";
 import type { Tone } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import type { RailResult as RailResultData } from "@/lib/types";
+
+const LOW_CONFIDENCE = 0.7;
 
 function classTone(label: string): Tone {
   return label === "Normal" ? "good" : "bad";
@@ -15,9 +18,36 @@ export function RailResult({ result }: { result: RailResultData }) {
   const confidenceEntries = Object.entries(detail.confidence);
   const maxRms = Math.max(detail.side_I_rms, detail.side_II_rms) || 1;
   const topConfidence = detail.confidence[prediction] ?? 0;
+  const needsInspection = topConfidence < LOW_CONFIDENCE;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
+      {needsInspection && (
+        <Alert variant="warning">
+          <AlertTriangle aria-hidden="true" />
+          <AlertTitle>Needs inspection — low confidence</AlertTitle>
+          <AlertDescription>
+            The model is only{" "}
+            {topConfidence.toLocaleString(undefined, { style: "percent", maximumFractionDigits: 0 })} sure
+            about this label. Treat it as a lead, not a final answer, and have someone check this
+            recording in person.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {detail.stationary && (
+        <Alert variant="warning">
+          <AlertTriangle aria-hidden="true" />
+          <AlertTitle>Stationary recording</AlertTitle>
+          <AlertDescription>
+            This recording was taken at only {detail.speed_kmh} km/h — the train was essentially not
+            moving. This check works by breaking the vibration signal down into frequencies (like a
+            spectrum), which only makes sense while the train is rolling. Without real motion, that
+            frequency breakdown is unreliable, so treat this result with caution.
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Card>
         <CardContent className="flex flex-col gap-4">
           <div className="flex items-start justify-between gap-3">
@@ -32,7 +62,7 @@ export function RailResult({ result }: { result: RailResultData }) {
               {topConfidence.toLocaleString(undefined, { style: "percent", maximumFractionDigits: 0 })} sure
             </StatusPill>
           </div>
-          <p className="rounded-lg border-l-2 border-primary bg-muted/30 p-4 text-sm leading-relaxed">
+          <p className="rounded-lg border-l-2 border-primary bg-muted/30 p-3.5 text-sm leading-relaxed">
             {detail.note}
           </p>
         </CardContent>

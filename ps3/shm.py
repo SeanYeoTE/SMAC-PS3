@@ -128,7 +128,9 @@ def predict(path: str) -> dict:
             "sn_exponent_m": p["m"],
             "sn_constant_C": p["C"],
             "damage_by_amplitude_band": bands[:4],
-            "note": "Damage is dominated by the few largest-amplitude cycles "
-                    f"because stress enters at roughly the power of {p['m']:.2f}.",
+            "note": "A handful of the largest stress swings drive most of the "
+                    "fatigue damage: a swing twice as big does roughly "
+                    f"{2 ** p['m']:.0f}x the damage, so small vibrations barely "
+                    "matter compared to the few big ones.",
         },
     }

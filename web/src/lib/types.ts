@@ -78,6 +78,7 @@ export interface RailResult {
     side_I_rms: number;
     side_II_rms: number;
     side_I_over_II: number;
+    stationary: boolean;
     note: string;
   };
 }

@@ -17,7 +17,7 @@ export function ShmResult({ result }: { result: ShmResultData }) {
   const remainingPct = (1 - prediction) * 100;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <Card>
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-3">
@@ -33,7 +33,7 @@ export function ShmResult({ result }: { result: ShmResultData }) {
           <p className="text-sm text-muted-foreground">
             Estimated remaining life: <span className="font-medium text-foreground">{remainingPct.toFixed(1)}%</span>
           </p>
-          <p className="rounded-lg border-l-2 border-primary bg-muted/30 p-4 text-sm leading-relaxed">
+          <p className="rounded-lg border-l-2 border-primary bg-muted/30 p-3.5 text-sm leading-relaxed">
             {detail.note}
           </p>
         </CardContent>

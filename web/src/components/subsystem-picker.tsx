@@ -47,7 +47,7 @@ export function SubsystemPicker({
               aria-checked={isSelected}
               onClick={() => onSelect(key)}
               className={cn(
-                "relative flex min-h-28 flex-col items-start gap-2 overflow-hidden rounded-xl border bg-card p-4 pl-5 text-left transition-colors",
+                "relative flex min-h-24 flex-col items-start gap-1.5 overflow-hidden rounded-xl border bg-card p-3.5 pl-4.5 text-left transition-colors",
                 "before:absolute before:inset-y-0 before:left-0 before:w-1",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                 isSelected

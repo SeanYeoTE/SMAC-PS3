@@ -72,7 +72,6 @@ export default function Home() {
   }
 
   function handleReset() {
-    setSelected(null);
     setFile(null);
     setResult(null);
     setAnalyzeError(null);
@@ -98,7 +97,7 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6">
+      <main className="relative z-10 mx-auto flex w-full max-w-5xl flex-1 flex-col gap-5 px-4 py-6 sm:px-6">
         {loadError && (
           <Alert variant="destructive">
             <AlertTitle>Couldn&apos;t reach the prediction server</AlertTitle>
@@ -116,7 +115,7 @@ export default function Home() {
 
         {subsystems && (
           <>
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
               <StatTile label="Subsystems Online" value={Object.keys(subsystems).length} tone="accent" />
               <StatTile label="Selected" value={selected ? selected.toUpperCase() : "—"} />
               <StatTile label="File Staged" value={file ? "Ready" : "—"} />

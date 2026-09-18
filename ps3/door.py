@@ -92,8 +92,10 @@ def predict(path: str) -> dict:
                              for k, v in seg.groupby("is_close")["baseline"].first().items()},
             "ratio_threshold": RATIO_THRESHOLD,
             "per_segment": detail.round(3).reset_index(drop=True),
-            "note": "Each cycle is compared to the 40th-percentile current of the "
-                    "same operation in this same file, so the rule survives "
-                    "door-to-door and stream-to-stream offsets.",
+            "note": "Each cycle's motor current is compared against the typical "
+                    "current for that same kind of cycle (opening or closing) in "
+                    "this same recording, rather than a fixed number shared across "
+                    "all doors. That way the check still works even if this door "
+                    "or sensor normally runs a bit higher or lower than others.",
         },
     }
