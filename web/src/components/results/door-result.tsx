@@ -13,7 +13,7 @@ import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@
 import { StatusBar } from "@/components/status-bar";
 import { StatusPill } from "@/components/status-pill";
 import { formatDoorTimestamp } from "@/lib/format";
-import type { DoorResult as DoorResultData } from "@/lib/types";
+import type { DoorResult as DoorResultData, Rca, RcaStatus } from "@/lib/types";
 
 const chartConfig = {
   ratio: { label: "Ratio to baseline", color: "var(--color-chart-1)" },
@@ -49,7 +49,15 @@ function dataQualityWarnings(detail: DoorResultData["detail"]): string[] {
   return warnings;
 }
 
-export function DoorResult({ result }: { result: DoorResultData }) {
+export function DoorResult({
+  result,
+  rca,
+  rcaStatus,
+}: {
+  result: DoorResultData;
+  rca?: Rca;
+  rcaStatus?: RcaStatus;
+}) {
   const { segments, detail } = result;
   const allNormal = detail.n_abnormal === 0;
   const maxRatio = Math.max(detail.ratio_threshold, ...detail.per_segment.map((s) => s.ratio));
@@ -106,7 +114,7 @@ export function DoorResult({ result }: { result: DoorResultData }) {
               <p className="eyebrow mt-0.5">Train Door · Open/Close Resistance Check</p>
             </div>
           </div>
-          <RcaText result={result} />
+          <RcaText result={result} rca={rca} rcaStatus={rcaStatus} />
         </CardContent>
       </Card>
 

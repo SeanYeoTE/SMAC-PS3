@@ -5,13 +5,21 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { StatusPill } from "@/components/status-pill";
 import { confidenceTone } from "@/lib/status";
-import type { AcvResult as AcvResultData } from "@/lib/types";
+import type { AcvResult as AcvResultData, Rca, RcaStatus } from "@/lib/types";
 
 const chartConfig = {
   score: { label: "Cabin temp vs median (°C)", color: "var(--color-chart-1)" },
 } satisfies ChartConfig;
 
-export function AcvResult({ result }: { result: AcvResultData }) {
+export function AcvResult({
+  result,
+  rca,
+  rcaStatus,
+}: {
+  result: AcvResultData;
+  rca?: Rca;
+  rcaStatus?: RcaStatus;
+}) {
   const { prediction, detail } = result;
   const rankedCars = result.ranked_cars.split("|");
   const tone = confidenceTone(detail.confidence);
@@ -39,7 +47,7 @@ export function AcvResult({ result }: { result: AcvResultData }) {
               {detail.confidence} confidence
             </StatusPill>
           </div>
-          <RcaText result={result} />
+          <RcaText result={result} rca={rca} rcaStatus={rcaStatus} />
         </CardContent>
       </Card>
 

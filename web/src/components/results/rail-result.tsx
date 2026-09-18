@@ -7,7 +7,7 @@ import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } f
 import { StatusBar } from "@/components/status-bar";
 import { StatusPill } from "@/components/status-pill";
 import type { Tone } from "@/lib/status";
-import type { RailResult as RailResultData } from "@/lib/types";
+import type { RailResult as RailResultData, Rca, RcaStatus } from "@/lib/types";
 
 const LOW_CONFIDENCE = 0.7;
 
@@ -19,7 +19,15 @@ const confidenceChartConfig = {
   confidence: { label: "Confidence", color: "var(--color-chart-1)" },
 } satisfies ChartConfig;
 
-export function RailResult({ result }: { result: RailResultData }) {
+export function RailResult({
+  result,
+  rca,
+  rcaStatus,
+}: {
+  result: RailResultData;
+  rca?: Rca;
+  rcaStatus?: RcaStatus;
+}) {
   const { prediction, detail } = result;
   const confidenceEntries = Object.entries(detail.confidence);
   const maxRms = Math.max(detail.side_I_rms, detail.side_II_rms) || 1;
@@ -68,7 +76,7 @@ export function RailResult({ result }: { result: RailResultData }) {
               {topConfidence.toLocaleString(undefined, { style: "percent", maximumFractionDigits: 0 })} sure
             </StatusPill>
           </div>
-          <RcaText result={result} />
+          <RcaText result={result} rca={rca} rcaStatus={rcaStatus} />
         </CardContent>
       </Card>
 
