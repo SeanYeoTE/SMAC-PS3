@@ -47,15 +47,15 @@ export function ShmResult({ result }: { result: ShmResultData }) {
           <div className="flex flex-col gap-3">
             {detail.damage_by_amplitude_band.map((band) => (
               <div key={band.amplitude_range} className="grid grid-cols-[110px_1fr_48px] items-center gap-3">
-                <span className="text-xs text-muted-foreground">{band.amplitude_range}</span>
+                <span className="text-sm text-muted-foreground">{band.amplitude_range}</span>
                 <StatusBar value={band.share_of_damage * 100} tone="neutral" />
-                <span className="text-right text-xs tabular-nums">
+                <span className="text-right text-sm tabular-nums">
                   {(band.share_of_damage * 100).toFixed(0)}%
                 </span>
               </div>
             ))}
           </div>
-          <p className="mt-3 text-xs text-muted-foreground">
+          <p className="mt-3 text-sm text-muted-foreground">
             Amplitude ranges are in the stress units of the original signal; share of damage is each
             range&apos;s contribution to the total, driven by a small number of large-amplitude cycles.
           </p>

@@ -57,10 +57,10 @@ export function SubsystemPicker({
             >
               <span className="flex w-full items-center gap-2">
                 <Icon className={cn("size-4.5 shrink-0", isSelected ? "text-primary" : "text-muted-foreground")} aria-hidden="true" />
-                <span className="font-mono text-xs font-semibold tracking-wide text-muted-foreground">
+                <span className="font-mono text-sm font-semibold tracking-wide text-muted-foreground">
                   {key.toUpperCase()}
                 </span>
-                <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-[0.65rem] font-medium text-muted-foreground">
+                <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
                   {meta.accepts.join(" / ")}
                 </span>
               </span>

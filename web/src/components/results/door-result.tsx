@@ -100,7 +100,7 @@ export function DoorResult({ result }: { result: DoorResultData }) {
           <div className="flex items-center gap-1" role="group" aria-label="Sort order">
             <Button
               type="button"
-              size="xs"
+              size="sm"
               variant={sortMode === "abnormal" ? "secondary" : "ghost"}
               aria-pressed={sortMode === "abnormal"}
               onClick={() => setSortMode("abnormal")}
@@ -109,7 +109,7 @@ export function DoorResult({ result }: { result: DoorResultData }) {
             </Button>
             <Button
               type="button"
-              size="xs"
+              size="sm"
               variant={sortMode === "chronological" ? "secondary" : "ghost"}
               aria-pressed={sortMode === "chronological"}
               onClick={() => setSortMode("chronological")}
@@ -162,7 +162,7 @@ export function DoorResult({ result }: { result: DoorResultData }) {
             ))}
           </dl>
           <div className="flex flex-col gap-3">
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               Current relative to baseline, per cycle. The tick marks the abnormal threshold.
             </p>
             {detail.per_segment.map((seg, i) => (

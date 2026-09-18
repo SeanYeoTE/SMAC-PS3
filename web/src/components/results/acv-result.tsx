@@ -55,7 +55,7 @@ export function AcvResult({ result }: { result: AcvResultData }) {
                     Car {car}
                   </span>
                   <StatusBar value={pct} tone={isTop ? "bad" : "neutral"} />
-                  <span className="text-right text-xs tabular-nums">
+                  <span className="text-right text-sm tabular-nums">
                     {score >= 0 ? "+" : ""}
                     {score.toFixed(3)} °C
                   </span>
@@ -63,7 +63,7 @@ export function AcvResult({ result }: { result: AcvResultData }) {
               );
             })}
           </div>
-          <p className="mt-3 text-xs text-muted-foreground">
+          <p className="mt-3 text-sm text-muted-foreground">
             Score is each car&apos;s cabin temperature relative to the train median — warmer means less cooling
             capacity, consistent with a refrigerant leak.
           </p>

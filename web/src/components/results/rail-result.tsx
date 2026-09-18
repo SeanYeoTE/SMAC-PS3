@@ -80,7 +80,7 @@ export function RailResult({ result }: { result: RailResultData }) {
                   {label}
                 </span>
                 <StatusBar value={prob * 100} tone={label === prediction ? classTone(label) : "neutral"} />
-                <span className="text-right text-xs tabular-nums">{(prob * 100).toFixed(0)}%</span>
+                <span className="text-right text-sm tabular-nums">{(prob * 100).toFixed(0)}%</span>
               </div>
             ))}
           </div>
@@ -95,14 +95,14 @@ export function RailResult({ result }: { result: RailResultData }) {
           <div className="grid grid-cols-[80px_1fr_72px] items-center gap-3">
             <span className="text-muted-foreground">Side I</span>
             <StatusBar value={(detail.side_I_rms / maxRms) * 100} tone="neutral" />
-            <span className="text-right text-xs tabular-nums">{detail.side_I_rms.toFixed(5)}</span>
+            <span className="text-right text-sm tabular-nums">{detail.side_I_rms.toFixed(5)}</span>
           </div>
           <div className="grid grid-cols-[80px_1fr_72px] items-center gap-3">
             <span className="text-muted-foreground">Side II</span>
             <StatusBar value={(detail.side_II_rms / maxRms) * 100} tone="neutral" />
-            <span className="text-right text-xs tabular-nums">{detail.side_II_rms.toFixed(5)}</span>
+            <span className="text-right text-sm tabular-nums">{detail.side_II_rms.toFixed(5)}</span>
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Vibration RMS by side. Side I ÷ Side II ratio: {detail.side_I_over_II.toFixed(3)}
           </p>
         </div>
