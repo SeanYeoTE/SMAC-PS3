@@ -12,10 +12,10 @@ import { StatusPill } from "@/components/status-pill";
 import { SubsystemSidebar } from "@/components/subsystem-sidebar";
 import { UploadCard } from "@/components/upload-card";
 import { BatchResults } from "@/components/batch-results";
-import { fetchSubsystems, predict } from "@/lib/api";
+import { fetchRca, fetchSubsystems, predict } from "@/lib/api";
 import { downloadBatchSummaryCsv, downloadPredictionsCsv, downloadResultCsv } from "@/lib/csv";
 import { countFlagged, summarizeResult } from "@/lib/summary";
-import type { BatchItem, SubsystemKey, SubsystemsResponse } from "@/lib/types";
+import type { BatchItem, PredictResult, SubsystemKey, SubsystemsResponse } from "@/lib/types";
 
 async function predictOne(subsystem: SubsystemKey, file: File): Promise<BatchItem> {
   try {
@@ -67,6 +67,17 @@ export default function Home() {
     setItems(null);
   }
 
+  function fireRca(i: number, subsystem: SubsystemKey, result: PredictResult) {
+    setItems((prev) => prev?.map((it, idx) => (idx === i && it.status === "done" ? { ...it, rcaStatus: "pending" } : it)) ?? prev);
+    fetchRca(subsystem, result)
+      .then((rca) => {
+        setItems((prev) => prev?.map((it, idx) => (idx === i && it.status === "done" ? { ...it, rca, rcaStatus: "done" } : it)) ?? prev);
+      })
+      .catch(() => {
+        setItems((prev) => prev?.map((it, idx) => (idx === i && it.status === "done" ? { ...it, rcaStatus: "error" } : it)) ?? prev);
+      });
+  }
+
   async function handleAnalyze() {
     if (!selected || files.length === 0) return;
     setItems(files.map((file) => ({ file, status: "pending" })));
@@ -75,6 +86,7 @@ export default function Home() {
       setItems((prev) => prev?.map((it, idx) => (idx === i ? { file, status: "processing" } : it)) ?? prev);
       const result = await predictOne(selected, file);
       setItems((prev) => prev?.map((it, idx) => (idx === i ? result : it)) ?? prev);
+      if (result.status === "done") fireRca(i, selected, result.result);
     }
   }
 
@@ -95,6 +107,7 @@ export default function Home() {
       setItems((prev) => prev?.map((it, idx) => (idx === i ? { file, status: "processing" } : it)) ?? prev);
       const result = await predictOne(selected, file);
       setItems((prev) => prev?.map((it, idx) => (idx === i ? result : it)) ?? prev);
+      if (result.status === "done") fireRca(i, selected, result.result);
     }
   }
 

@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { StatusBar } from "@/components/status-bar";
 import type { Tone } from "@/lib/status";
-import type { ShmResult as ShmResultData } from "@/lib/types";
+import type { Rca, RcaStatus, ShmResult as ShmResultData } from "@/lib/types";
 
 const chartConfig = {
   share: { label: "Share of damage", color: "var(--color-chart-1)" },
@@ -17,7 +17,15 @@ function damageTone(fraction: number): Tone {
   return "good";
 }
 
-export function ShmResult({ result }: { result: ShmResultData }) {
+export function ShmResult({
+  result,
+  rca,
+  rcaStatus,
+}: {
+  result: ShmResultData;
+  rca?: Rca;
+  rcaStatus?: RcaStatus;
+}) {
   const { prediction, detail } = result;
   const pct = prediction * 100;
   const tone = damageTone(prediction);
@@ -40,7 +48,7 @@ export function ShmResult({ result }: { result: ShmResultData }) {
           <p className="text-sm text-muted-foreground">
             Estimated remaining life: <span className="font-medium text-foreground">{remainingPct.toFixed(1)}%</span>
           </p>
-          <RcaText result={result} />
+          <RcaText result={result} rca={rca} rcaStatus={rcaStatus} />
         </CardContent>
       </Card>
 

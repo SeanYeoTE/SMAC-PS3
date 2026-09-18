@@ -60,7 +60,7 @@ export function BatchResults({ items }: { items: BatchItem[] }) {
         <AlertDescription>{item.error}</AlertDescription>
       </Alert>
     ) : (
-      <ResultView result={item.result} />
+      <ResultView result={item.result} rca={item.rca} rcaStatus={item.rcaStatus} />
     );
   }
 
@@ -236,7 +236,7 @@ export function BatchResults({ items }: { items: BatchItem[] }) {
               )}
               {expanded.has(i) && item.status === "done" && (
                 <div className="border-t border-border p-3">
-                  <ResultView result={item.result} />
+                  <ResultView result={item.result} rca={item.rca} rcaStatus={item.rcaStatus} />
                 </div>
               )}
             </CardContent>

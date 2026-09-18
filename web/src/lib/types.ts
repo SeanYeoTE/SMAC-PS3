@@ -87,11 +87,19 @@ export interface RailResult {
 
 export type PredictResult = DoorResult | ShmResult | AcvResult | RailResult;
 
+/** Gemini-generated root cause analysis for a prediction result. */
+export interface Rca {
+  cause: string;
+  action: string;
+}
+
+export type RcaStatus = "pending" | "done" | "error";
+
 /** One file's outcome in a (possibly multi-file) analysis batch. */
 export type BatchItem =
   | { file: File; status: "pending" }
   | { file: File; status: "processing" }
-  | { file: File; status: "done"; result: PredictResult }
+  | { file: File; status: "done"; result: PredictResult; rca?: Rca; rcaStatus?: RcaStatus }
   | { file: File; status: "error"; error: string };
 
 export class ApiError extends Error {}

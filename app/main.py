@@ -9,11 +9,11 @@ import os
 import tempfile
 
 import pandas as pd
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from ps3 import predict
+from ps3 import predict, rca
 
 app = FastAPI(title="NebulaX PS3 - Fault Prediction")
 
@@ -87,3 +87,19 @@ async def run_prediction(subsystem: str, file: UploadFile = File(...)):
         os.unlink(tmp_path)
 
     return JSONResponse(_jsonable({"subsystem": key, **result}))
+
+
+@app.post("/api/rca/{subsystem}")
+async def run_rca(subsystem: str, result: dict = Body(...)):
+    key = subsystem.strip().lower()
+    if key not in predict.SUBSYSTEMS:
+        raise HTTPException(404, f"unknown subsystem '{subsystem}'")
+
+    try:
+        # google-genai's client call is blocking network I/O; keep it off
+        # the event loop like the predict route does for its CPU-bound work.
+        rca_result = await asyncio.to_thread(rca.call_gemini, key, result)
+    except Exception as exc:
+        raise HTTPException(502, f"Gemini RCA request failed: {exc}")
+
+    return JSONResponse(rca_result)
