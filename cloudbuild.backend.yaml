@@ -1,0 +1,36 @@
+# Cloud Build trigger: watch app/**, ps3/**, requirements.txt, Dockerfile,
+# .dockerignore -- root include filters, since this repo keeps app/ and
+# ps3/ at the root rather than under a backend/ subfolder.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile
+      - -t
+      - us-central1-docker.pkg.dev/$PROJECT_ID/nebulax-containers/nebulax-api:$BUILD_ID
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - us-central1-docker.pkg.dev/$PROJECT_ID/nebulax-containers/nebulax-api:$BUILD_ID
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - nebulax-api
+      - --image
+      - us-central1-docker.pkg.dev/$PROJECT_ID/nebulax-containers/nebulax-api:$BUILD_ID
+      - --region
+      - us-central1
+      - --platform
+      - managed
+      - --allow-unauthenticated
+      - --memory
+      - 2Gi
+
+images:
+  - us-central1-docker.pkg.dev/$PROJECT_ID/nebulax-containers/nebulax-api:$BUILD_ID

@@ -1,0 +1,32 @@
+# Cloud Build trigger: watch web/**.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - web/Dockerfile
+      - -t
+      - us-central1-docker.pkg.dev/$PROJECT_ID/nebulax-containers/nebulax-frontend:$BUILD_ID
+      - web
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - us-central1-docker.pkg.dev/$PROJECT_ID/nebulax-containers/nebulax-frontend:$BUILD_ID
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - nebulax-frontend
+      - --image
+      - us-central1-docker.pkg.dev/$PROJECT_ID/nebulax-containers/nebulax-frontend:$BUILD_ID
+      - --region
+      - us-central1
+      - --platform
+      - managed
+      - --allow-unauthenticated
+
+images:
+  - us-central1-docker.pkg.dev/$PROJECT_ID/nebulax-containers/nebulax-frontend:$BUILD_ID

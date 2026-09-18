@@ -1,0 +1,25 @@
+# Controls what gcloud uploads as build source (separate from .dockerignore,
+# which only controls the `docker build` context once source is already
+# uploaded). Needed because gcloud does not recurse into nested .gitignore
+# files like web/.gitignore, so web/node_modules would otherwise get
+# uploaded in full on every build.
+.git/
+.gitignore
+
+**/node_modules/
+**/.next/
+**/__pycache__/
+*.pyc
+*.pyo
+
+.venv/
+.venv-*/
+.claude/
+
+rail_feats_v2.pkl
+submission/
+charts/
+data/
+02_Datasets/
+
+.DS_Store
