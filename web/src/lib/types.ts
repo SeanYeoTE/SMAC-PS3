@@ -87,4 +87,9 @@ export interface RailResult {
 
 export type PredictResult = DoorResult | ShmResult | AcvResult | RailResult;
 
+/** One file's outcome in a (possibly multi-file) analysis batch. */
+export type BatchItem =
+  | { file: File; status: "done"; result: PredictResult }
+  | { file: File; status: "error"; error: string };
+
 export class ApiError extends Error {}

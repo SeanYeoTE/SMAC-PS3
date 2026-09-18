@@ -1,5 +1,6 @@
 import { formatDoorTimestamp, formatNowTimestamp } from "@/lib/format";
-import type { PredictResult } from "@/lib/types";
+import { summarizeResult } from "@/lib/summary";
+import type { BatchItem, PredictResult } from "@/lib/types";
 
 function escapeCsvField(value: string | number): string {
   const s = String(value);
@@ -111,14 +112,31 @@ export function resultToCsv(result: PredictResult): string {
   }
 }
 
-export function downloadResultCsv(result: PredictResult): void {
-  const blob = new Blob([resultToCsv(result)], { type: "text/csv;charset=utf-8;" });
+function triggerCsvDownload(content: string, filename: string): void {
+  const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${result.subsystem}-result-${formatNowTimestamp()}.csv`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+export function downloadResultCsv(result: PredictResult): void {
+  triggerCsvDownload(resultToCsv(result), `${result.subsystem}-result-${formatNowTimestamp()}.csv`);
+}
+
+export function downloadBatchSummaryCsv(subsystem: string, items: BatchItem[]): void {
+  const rows: (string | number)[][] = [["File", "Status", "Result", "Severity (%)", "Details"]];
+  for (const item of items) {
+    if (item.status === "error") {
+      rows.push([item.file.name, "Error", "", "", item.error]);
+      continue;
+    }
+    const summary = summarizeResult(item.result);
+    rows.push([item.file.name, "Done", summary.label, summary.severityPct.toFixed(0), summary.severityLabel]);
+  }
+  triggerCsvDownload(toCsv(rows), `${subsystem}-batch-summary-${formatNowTimestamp()}.csv`);
 }
