@@ -6,7 +6,7 @@ import sys, os, time
 import numpy as np, pandas as pd, joblib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ps3 import rail
-from sklearn.model_selection import StratifiedKFold, cross_val_predict
+from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import f1_score, classification_report
 
 def main(train_dir, labels_csv, cache="rail_feats_v2.pkl"):
@@ -22,11 +22,14 @@ def main(train_dir, labels_csv, cache="rail_feats_v2.pkl"):
     X = F.drop(columns=[c for c in ("filename", "label") if c in F.columns])
     X = X[sorted(X.columns)]
     y = lab["label"].to_numpy()
-    m = rail.make_model()
-    p = cross_val_predict(m, X, y, cv=StratifiedKFold(5, shuffle=True, random_state=0))
+    # 5-fold CV; each training fold gets side-swapped copies of its corrugated
+    # recordings (rail.augment), each test fold is scored on the originals only
+    p = np.empty(len(y), dtype=object)
+    for tr, te in StratifiedKFold(5, shuffle=True, random_state=0).split(X, y):
+        p[te] = rail.make_model().fit(*rail.augment(X.iloc[tr], y[tr])).predict(X.iloc[te])
     print(f"\nCV macro F1 = {f1_score(y, p, average='macro'):.4f}")
     print(classification_report(y, p, digits=3))
-    m.fit(X, y)
+    m = rail.make_model().fit(*rail.augment(X, y))
     joblib.dump({"model": m, "features": list(X.columns),
                  "reference": rail.reference_stats(X, y)}, rail.MODEL_PATH)
     print("saved", rail.MODEL_PATH)

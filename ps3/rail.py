@@ -8,13 +8,17 @@ built per side and the model learns which side is worse.
 
 Model: soft vote of gradient boosting, RBF-SVM and logistic regression
 (make_model) on the 57 side features plus 16 loudest-axle-box features.
-Measured (5-fold CV x 20 seeds, 272 training files): macro F1 0.84 +- 0.02,
-against 0.80 +- 0.04 for the previous single gradient-boosted model on the
-same splits (better on 18 of 20 seeds). Per class: Normal 0.978, Side II
-0.863, Side I 0.676. The ensemble was picked from ~15 configurations on the
-same data, so 0.84 is slightly optimistic, and with only 14 Side I files
-(3-4 expected in the test set) the realised score can move +-0.1. Report
-that range, not a point estimate.
+Training data are augmented with a side-swapped copy of every corrugated
+recording (augment): the same recording seen from the mirrored side is a valid
+example of the other class, which grows each fault class from 14 / 24 to 38.
+
+Measured on 20 fresh 5-fold splits (seeds not used for any other choice, 272
+training files): macro F1 0.87 +- 0.03, against 0.83 +- 0.03 for the same
+ensemble without mirrored copies (better on 17 of 20). Per class: Normal
+0.983, Side II 0.897, Side I 0.724. Mirroring every recording, or mirroring
+with the older single gradient-boosted model, gave no gain. With only 14
+Side I files (about 4 expected in the test set) the realised score can move
++-0.1. Report that range, not a point estimate.
 
 Speed is a weak confound, not a dominant one: speed alone gives macro F1
 0.399 against a 0.33 always-Normal floor, and dropping it costs only 0.02.
@@ -107,6 +111,30 @@ def _wheel_features(a: np.ndarray, groups: dict, out: dict) -> None:
             out[f"{side}_{kind}_wheel_excess"] = v[-1] - file_med
 
 
+def swap_sides(F: pd.DataFrame) -> pd.DataFrame:
+    """The same recording with Side I and Side II exchanged: every I_/sI_ feature
+    swaps with its II_/sII_ twin. Used to augment training data, because a
+    Side I corrugation seen from the mirrored side is a valid Side II example."""
+    def twin(c):
+        for a, b in (("sII_", "sI_"), ("sI_", "sII_"), ("II_", "I_"), ("I_", "II_")):
+            if c.startswith(a):
+                return b + c[len(a):]
+        return c
+    return F.rename(columns={c: twin(c) for c in F.columns})[list(F.columns)]
+
+
+MIRROR = {"Normal": "Normal", "Side I": "Side II", "Side II": "Side I"}
+
+
+def augment(F: pd.DataFrame, y) -> tuple[pd.DataFrame, np.ndarray]:
+    """Training set plus a side-swapped copy of every corrugated recording."""
+    y = np.asarray(y)
+    fault = y != "Normal"
+    S = swap_sides(F[fault])
+    return (pd.concat([F, S], ignore_index=True),
+            np.concatenate([y, [MIRROR[v] for v in y[fault]]]))
+
+
 def make_model():
     """Soft vote of three different learners. Averaging their class
     probabilities was the only change that beat the single gradient-boosted
@@ -182,9 +210,10 @@ def _evidence(ref: dict, f: pd.Series, label: str, proba: dict) -> dict:
     for side in (["I", "II"] if label == "Normal" else [label.split()[-1]]):
         box = _speed_matched_share(ref, f"{side}_vib_wheel_max", f[f"{side}_vib_wheel_max"], f["speed"])
         avg = _speed_matched_share(ref, f"{side}_rms", f[f"{side}_rms"], f["speed"])
-        ev.append(f"Side {side}: the loudest axle box vibrates more than {box:.0%}, and the "
-                  f"side average more than {avg:.0%}, of the {SPEED_NEIGHBOURS} Normal "
-                  "training recordings closest in speed.")
+        share = lambda v: "all" if v >= 1 else f"{v:.0%}"
+        ev.append(f"Side {side}: loudest axle box above {share(box)} of the {SPEED_NEIGHBOURS} "
+                  f"Normal training recordings closest in speed; side average above "
+                  f"{share(avg)} of them.")
     lo, hi = ref["speed_range_kmh"]
     stationary = f["speed"] < 5
     ev.append(f"Recorded at {f['speed']:.0f} km/h (training recordings: {lo:.0f} to {hi:.0f} km/h)."

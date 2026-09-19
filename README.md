@@ -14,9 +14,9 @@ explanation that the app can show on screen.
 | **Door** | Find each open/close cycle, label it Normal or Abnormal resistance | Time-gap segmentation + motor current relative to the file's own baseline | **0.996** (110/110 on the full stream) | 5-fold × 5 seeds, 110 cycles |
 | **SHM** | Estimate cumulative fatigue damage | Ridge regression on rainflow damage sums, counted the way the labels were made | **0.995** (MAPE 0.54%) | leave-one-out, 64 files |
 | **ACV** | Rank the 8 cars by refrigerant-leak likelihood | Logistic regression on 4 cabin-temperature features, each relative to the other cars | **0.979** (true car 1st in 5 of 6 cases, 2nd in 1) | leave-one-case-out, 6 cases |
-| **Rail** | Normal / Side I / Side II corrugation | 73 vibration features + soft-vote ensemble | **0.84 ± 0.02** macro F1 (nested: 0.83) | 5-fold × 20 seeds, 272 files |
+| **Rail** | Normal / Side I / Side II corrugation | 73 vibration features + soft-vote ensemble, trained with mirrored fault recordings | **0.87 ± 0.03** macro F1 | 5-fold × 20 fresh seeds, 272 files |
 
-If these estimates hold, the Overall Score is roughly **0.94–0.96**. ACV (a single
+If these estimates hold, the Overall Score is roughly **0.95–0.96**. ACV (a single
 test file) and Rail (only a handful of Side I files in the test set) are the two
 that can move it.
 
@@ -259,20 +259,33 @@ All three use balanced class weights to account for the rare fault classes.
 - RBF-SVM (C = 3, standardised);
 - logistic regression (C = 0.1, standardised).
 
-| | Previous model (gradient boosting, 57 features) | Current model (ensemble, 73 features) |
-|---|---|---|
-| Macro F1, 5-fold × 20 seeds | 0.80 ± 0.04 | **0.84 ± 0.02** (better on 18 of 20 splits) |
-| Normal F1 | 0.978 | 0.978 |
-| Side I F1 | 0.597 | **0.676** |
-| Side II F1 | 0.830 | **0.863** |
+**Training data:** every training set also gets a side-swapped copy of each corrugated
+recording (`rail.augment`). Swapping the Side I and Side II channels turns a Side I
+recording into a valid Side II example and the other way round, so each fault class
+has 38 examples instead of 14 and 24. Test folds are always scored on the original
+recordings only.
+
+| | Gradient boosting, 57 features | Ensemble, 73 features | **Ensemble + mirrored fault recordings (used)** |
+|---|---|---|---|
+| Macro F1 | 0.80 ± 0.04 | 0.83 ± 0.03 | **0.87 ± 0.03** |
+| Normal F1 | 0.978 | 0.977 | **0.983** |
+| Side I F1 | 0.597 | 0.646 | **0.724** |
+| Side II F1 | 0.830 | 0.866 | **0.897** |
+
+The first column is 5-fold × 20 seeds from the first round. The other two are 5-fold ×
+20 fresh seeds that were not used for any other choice; mirroring is better on 17 of
+the 20.
 
 **What the data showed:**
 
 - **Loudest boxes carry the signal.** Corrugation shows up in the few loudest axle
   boxes on the faulty side. Median-based features wash it out: left-vs-right
   contrasts built on medians scored only 0.46.
-- **The sides aren't mirror images.** Swapping Side I and Side II channels to create
-  extra examples made things worse (0.805).
+- **Mirroring helps the ensemble, not the single model.** With the old gradient-boosted
+  model, side-swapped copies gave no gain (0.805). The ensemble's SVM and logistic
+  regression need enough examples of each fault class to learn where Side I ends and
+  Side II begins, and with mirrored fault recordings it improves from 0.83 to 0.87.
+  Mirroring the Normal recordings as well helps less (0.85).
 - **Errors are mostly misses.** Most Side I errors are faults called Normal, not
   confusion with Side II.
 - **Faults need speed.** Faults only appear at 35 km/h or more, and stationary files
@@ -289,16 +302,21 @@ All three use balanced class weights to account for the rare fault classes.
 | Extra per-band loudest-box features | 0.78 |
 | Symmetric "is this side corrugated?" scorer | 0.42–0.79 |
 | Decision rule tuned inside the folds | +0.012, not adopted |
+| Separate model per axle box, stacked on the file model | −0.011 |
+| Features normalised against the 40 Normal files closest in speed | −0.015 |
+| Forcing the expected test class counts | −0.003 even with the exact counts |
 
 Feature importance, feature selection and weighting tests are in their own section
 below.
 
 **Caveats:**
 
-- With 3–4 Side I files expected in the test set, the realised score can move by
-  about 0.1 either way.
-- One test file is a genuine toss-up: Test9 is 65% Side II under the old model and
-  65% Normal under the new one.
+- With about 4 Side I files expected in the test set, the realised score can move by
+  about 0.1 either way. A split stratified 80/20 by class would put 58 Normal, 4 Side I
+  and 6 Side II recordings in the test set.
+- Three test files are close calls: Test9, Test14 and Test18 are 55–63% Side II with
+  mirrored training and were narrowly Normal without it. The test predictions are now
+  57 Normal, 5 Side I and 6 Side II.
 
 ## Evidence and priority (for root cause analysis)
 
@@ -326,8 +344,8 @@ unreliable.
 On the test data: Door is high (worst cycle +37.9%). ACV is medium: the model gives
 car 01 88% and physics agrees, but car 01's excess (0.099 °C) is weaker than any
 training leak.
-Rail Test9 is medium (predicted Normal, 35% corrugation; its Side II loudest axle box is
-above 98% of speed-matched Normal files). SHM test02 is medium (D = 0.82, 18% capacity
+Rail Test9 is medium (Side II at 63%; its Side II loudest axle box is above 98% of
+speed-matched Normal files). SHM test02 is medium (D = 0.82, 18% capacity
 left).
 
 ## Validation
@@ -340,7 +358,7 @@ tested by a model that never saw it.
 
 | Subsystem | Method | What is fitted inside each training part |
 |---|---|---|
-| Rail | 5 folds (fit on 80%, test on 20%), repeated over 20 random splits | feature scaling, all three models |
+| Rail | 5 folds (fit on 80%, test on 20%), repeated over 20 random splits | feature scaling, all three models, the mirrored copies (made from the training part only) |
 | SHM | leave-one-out: fit on 63 files, test on the 64th, 64 times | feature scaling, ridge regression and its regularisation |
 | Door | 5 folds × 5 seeds | the ratio threshold |
 | ACV | leave-one-case-out: fit on 5 cases, test on the 6th, 6 times | the logistic-regression weights |
@@ -376,7 +394,7 @@ this, so it is stated here rather than ignored.
 |---|---|---|---|
 | SHM (ridge regression) | 0.45% error | 0.54% error | small gap, no overfitting |
 | Door (1 threshold) | 100% | 99.6% | no overfitting |
-| Rail (ensemble) | 0.99 | **0.84** | fits the training data almost perfectly; 0.84 is the honest figure |
+| Rail (ensemble + mirroring) | 0.99 | **0.87** | fits the training data almost perfectly; 0.87 is the honest figure |
 
 ### Nested cross-validation (Rail)
 
@@ -388,7 +406,9 @@ scored on an outer test fold that the choice never saw. That procedure scores
 **0.834**, against 0.84 for the ensemble, so selection added about 0.01 at most. The
 inner loop picked different winners in different folds (old model 5 times, gradient
 boosting + logistic regression 3, ensemble 2), which shows how close the candidates are
-with about 11 Side I files per fold.
+with about 11 Side I files per fold. Mirroring was added afterwards and tested on 20
+fresh splits that were not used for any other choice: 0.868 ± 0.028 against
+0.830 ± 0.029 without it.
 
 ### Honesty notes
 
@@ -398,14 +418,19 @@ with about 11 Side I files per fold.
 - Door's relative baseline uses only the test file's own unlabelled readings, which
   are available at prediction time.
 - Selection effects are stated where they exist: ACV variants were compared on its
-  6 cases, the Rail ensemble was picked from ~15 configurations
+  6 cases, the Rail ensemble was picked from ~15 configurations and mirroring was
+  confirmed on 20 fresh splits
   (the nested check above measures how much that matters), and the SHM counting
   method from a handful of variants (64 levels is fatpack's default and a sharp
   optimum; the model was confirmed on 20 repeated splits).
 - Rail has a speed confound: in training, faults only occur above 35 km/h. A slow
   corrugated section in real service would likely be called Normal.
+- Rail mirroring assumes the two sides respond alike. The gain on fresh splits says the
+  assumption holds well enough, but it is an assumption.
 
 ## Feature importance, selection and weighting (Rail)
+
+These tests were run on the ensemble before mirrored training was added.
 
 ### Which features matter
 
@@ -523,7 +548,7 @@ python fit_acv.py  <ACV dir, holding Train/ and Train_Labels.csv>
 `fit_shm.py` takes about 20 s. It fits the ridge model (`ps3/model_shm.joblib`) and the
 Miner's-rule constants used as a cross-check (`ps3/params_shm.json`), and prints the
 formula's in-sample MAPE and the model's leave-one-out MAPE. `fit_rail.py` takes a few minutes for 272 files and caches features to
-`rail_feats_v2.pkl`. It prints the cross-validated macro F1 and saves
+`rail_feats_v2.pkl`. It adds the mirrored copies, prints the cross-validated macro F1 and saves
 `ps3/model_rail.joblib`. `fit_acv.py` takes about 15 s with `python-calamine`, prints leave-one-case-out rank
 decay for the ranker and for the physics score, and saves `ps3/model_acv.joblib`. Each
 script also saves the training reference values used for the evidence in `detail`.
