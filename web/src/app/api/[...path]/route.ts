@@ -44,3 +44,7 @@ export async function GET(req: NextRequest, { params }: Params) {
 export async function POST(req: NextRequest, { params }: Params) {
   return proxy(req, (await params).path);
 }
+
+export async function DELETE(req: NextRequest, { params }: Params) {
+  return proxy(req, (await params).path);
+}
