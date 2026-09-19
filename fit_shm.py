@@ -2,7 +2,8 @@
   1. Miner's-rule constants m and C -> ps3/params_shm.json (used as a cross-check
      and for the explanation shown in the app);
   2. the prediction model, ridge regression on rainflow damage sums + signal
-     statistics -> ps3/model_shm.joblib.
+     statistics -> ps3/model_shm.joblib, together with the training reference
+     values used for the evidence in `detail`.
 Prints leave-one-out MAPE for both (64 files: 2.76% formula, 2.31% model)."""
 import json, sys, os
 import numpy as np, pandas as pd, joblib
@@ -39,7 +40,8 @@ def main(train_dir, labels_csv, out=None):
     model = shm.make_model().fit(X, ly)
     fit = np.exp(model.predict(X))
     print(f"model: in-sample MAPE={np.mean(np.abs(fit - y) / y):.2%}")
-    joblib.dump({"model": model, "features": list(X.columns)}, shm.MODEL_PATH)
+    joblib.dump({"model": model, "features": list(X.columns),
+                 "reference": shm.reference_stats(model, X, y, cyc)}, shm.MODEL_PATH)
     print("saved", shm.MODEL_PATH)
 
 if __name__ == "__main__":

@@ -33,6 +33,8 @@ TEETH = 90
 FREQ_BANDS = [(50, 150), (150, 300), (300, 600), (600, 1200), (1200, 2500), (2500, 5000)]
 WAVELENGTH_BANDS_MM = [(20, 40), (40, 80), (80, 160), (160, 320)]
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "model_rail.joblib")
+EVIDENCE_FEATURES = ["I_rms", "II_rms", "I_vib_wheel_max", "II_vib_wheel_max"]
+SPEED_NEIGHBOURS = 40      # Normal training recordings closest in speed, for the evidence
 _M = None
 
 
@@ -147,9 +149,60 @@ def predict(path: str) -> dict:
             "side_II_rms": round(float(f["II_rms"]), 5),
             "side_I_over_II": round(ratio, 3),
             "stationary": bool(f["speed"] < 5),
+            **_evidence(_M["reference"], f, str(label), proba),
             "note": ("Side I vibration is higher" if ratio > 1.05 else
                      "Side II vibration is higher" if ratio < 0.95 else
                      "Both sides comparable") +
                     f"; recording at {f['speed']:.0f} km/h.",
         },
     }
+
+
+def reference_stats(F: pd.DataFrame, y) -> dict:
+    """Speed and evidence features of the Normal training recordings; saved
+    with the model so each prediction can be compared with them."""
+    N = F[np.asarray(y) == "Normal"]
+    return {"normal_speed": [round(float(v), 3) for v in N["speed"]],
+            "normal": {c: [round(float(v), 6) for v in N[c]] for c in EVIDENCE_FEATURES},
+            "speed_range_kmh": [round(float(F["speed"].min()), 1), round(float(F["speed"].max()), 1)]}
+
+
+def _speed_matched_share(ref: dict, col: str, value: float, speed: float) -> float:
+    """Share of the Normal training recordings closest in speed that are below
+    `value`. Vibration rises with speed (r = 0.85 on Normal files), so the
+    comparison is made at similar speed."""
+    idx = np.argsort(np.abs(np.asarray(ref["normal_speed"]) - speed))[:SPEED_NEIGHBOURS]
+    return float((np.asarray(ref["normal"][col])[idx] < value).mean())
+
+
+def _evidence(ref: dict, f: pd.Series, label: str, proba: dict) -> dict:
+    """Findings measured against the Normal training recordings, plus a priority."""
+    probs = ", ".join(f"{k} {v:.0%}" for k, v in sorted(proba.items(), key=lambda kv: -kv[1]))
+    ev = [f"Model probabilities: {probs}."]
+    for side in (["I", "II"] if label == "Normal" else [label.split()[-1]]):
+        box = _speed_matched_share(ref, f"{side}_vib_wheel_max", f[f"{side}_vib_wheel_max"], f["speed"])
+        avg = _speed_matched_share(ref, f"{side}_rms", f[f"{side}_rms"], f["speed"])
+        ev.append(f"Side {side}: the loudest axle box vibrates more than {box:.0%}, and the "
+                  f"side average more than {avg:.0%}, of the {SPEED_NEIGHBOURS} Normal "
+                  "training recordings closest in speed.")
+    lo, hi = ref["speed_range_kmh"]
+    stationary = f["speed"] < 5
+    ev.append(f"Recorded at {f['speed']:.0f} km/h (training recordings: {lo:.0f} to {hi:.0f} km/h)."
+              + (" The train is (nearly) stationary, so the spectral evidence is unreliable."
+                 if stationary else ""))
+
+    p = float(proba[label])
+    p_corr = 1 - float(proba.get("Normal", 0.0))
+    if label != "Normal" and p >= 0.7:
+        priority, reason = "high", f"Corrugation on {label} with {p:.0%} model probability."
+    elif label != "Normal":
+        priority, reason = "medium", (f"Corrugation on {label} with only {p:.0%} model "
+                                      "probability: confirm with a track inspection.")
+    elif p_corr >= 0.3:
+        priority, reason = "medium", (f"Predicted Normal, but {p_corr:.0%} probability of "
+                                      "corrugation: borderline, re-check on the next run.")
+    else:
+        priority, reason = "low", f"Predicted Normal with {p:.0%} model probability."
+    if stationary and priority == "high":
+        priority, reason = "medium", reason + " Re-record while moving to confirm."
+    return {"evidence": ev, "priority": priority, "priority_reason": reason}

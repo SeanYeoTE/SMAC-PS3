@@ -1,6 +1,7 @@
 """Extracts features from the Rail training files and fits the classifier
 (soft vote of gradient boosting, RBF-SVM and logistic regression, see
-rail.make_model) -> ps3/model_rail.joblib.  ~3 min for 272 files."""
+rail.make_model) -> ps3/model_rail.joblib, together with the Normal training
+recordings' reference values used for the evidence in `detail`.  ~3 min for 272 files."""
 import sys, os, time
 import numpy as np, pandas as pd, joblib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -26,7 +27,8 @@ def main(train_dir, labels_csv, cache="rail_feats_v2.pkl"):
     print(f"\nCV macro F1 = {f1_score(y, p, average='macro'):.4f}")
     print(classification_report(y, p, digits=3))
     m.fit(X, y)
-    joblib.dump({"model": m, "features": list(X.columns)}, rail.MODEL_PATH)
+    joblib.dump({"model": m, "features": list(X.columns),
+                 "reference": rail.reference_stats(X, y)}, rail.MODEL_PATH)
     print("saved", rail.MODEL_PATH)
 
 if __name__ == "__main__":

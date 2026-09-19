@@ -13,7 +13,7 @@ explanation that the app can show on screen.
 |---|---|---|---|---|
 | **Door** | Find each open/close cycle, label it Normal or Abnormal resistance | Time-gap segmentation + motor current relative to the file's own baseline | **0.996** (110/110 on the full stream) | 5-fold × 5 seeds, 110 cycles |
 | **SHM** | Estimate cumulative fatigue damage | Ridge regression on rainflow damage sums + signal statistics | **0.977** (MAPE 2.31%) | leave-one-out, 64 files |
-| **ACV** | Rank the 8 cars by refrigerant-leak likelihood | Cabin temperature relative to the other cars | **0.979** (true car 1st in 5 of 6 cases, 2nd in 1) | all 6 training cases |
+| **ACV** | Rank the 8 cars by refrigerant-leak likelihood | Logistic regression on 4 cabin-temperature features, each relative to the other cars | **0.979** (true car 1st in 5 of 6 cases, 2nd in 1) | leave-one-case-out, 6 cases |
 | **Rail** | Normal / Side I / Side II corrugation | 73 vibration features + soft-vote ensemble | **0.84 ± 0.02** macro F1 (nested: 0.83) | 5-fold × 20 seeds, 272 files |
 
 If these estimates hold, the Overall Score is roughly **0.93–0.95**. ACV (a single
@@ -45,6 +45,9 @@ shown directly in the app and explains why the prediction was made. Door is the
 exception: it returns `{"segments": DataFrame, "detail": {...}}`, because one file
 contains many door cycles. `predict.SUBSYSTEMS` lists each subsystem's display
 name and accepted file types, which is enough to build the upload page.
+
+Every `detail` also has `evidence`, `priority` and `priority_reason`, which compare the
+file with the training data (see [Evidence and priority](#evidence-and-priority-for-root-cause-analysis)).
 
 The same predictors run from the command line, for one file or a whole folder. This
 writes the CSV in the exact submission format:
@@ -171,41 +174,58 @@ formula's 2.76%:
 The model runs in about 0.5 s per file (581,120 samples), so it also meets the Info
 Kit's call for automated, efficient assessment.
 
-### ACV: warmest car relative to its neighbours
+### ACV: trained ranker on cabin temperature relative to the other cars
 
 A refrigerant leak means less cooling capacity, so that car's cabin runs warmer than
-the others under the same weather, time of day and route.
+the others under the same weather, time of day and route. Every feature is measured
+against the other cars at the same moment, which cancels all three.
 
-1. At each timestamp, each car's indoor temperature minus the median of all 8 cars.
-   This cancels ambient temperature, time of day and route.
-2. Average over the file to get one score per car, then rank from warmest to coolest.
-3. Tiebreak: the share of time the crew switched that car to Manual Control.
+1. At each timestamp, each car's indoor temperature minus the median of all cars.
+2. Four features per car: the mean of that difference (`dev`, the physics score), the
+   same over the hotter half of the recording (`dev_hot`), the share of time the car is
+   the warmest (`warmest_share`), and indoor temperature minus setpoint, again relative
+   to the other cars (`dev_setpoint`). Each is z-scored across the cars of the file.
+3. A logistic regression trained on the 6 cases (48 cars, 6 of them leaking, balanced
+   class weights) scores each car. Exactly one car leaks per file, so the scores are
+   turned into probabilities that sum to 1, and the cars are ranked by them.
 
-`detail` reports the margin between the top two cars, with confidence high
-(≥ 0.15 °C), medium (≥ 0.05 °C) or low.
+Learned weights: `warmest_share` 1.25, `dev_hot` 0.67, `dev` 0.66, `dev_setpoint` 0.02.
 
-![ACV: each car's temperature relative to the train median, per case](charts/acv_car_scores.png)
+The physics score (`dev` alone, ranked warmest to coolest) is kept in `detail` as a
+cross-check (`scores_degC`, `physics_top_car`, `physics_agrees`), and the share of time
+the crew switched each car to Manual Control is still shown as supporting evidence.
+`confidence` is high when the top car's probability is at least 0.8 and medium when it
+is at least 0.5. In leave-one-case-out testing every "high" was correct, and the one
+miss (case 04) was "medium".
 
-On training, the true car ranks 1st in 5 of 6 cases and 2nd in 1 (score 0.979; a
-random ordering scores 0.5625). Expect 0.88–1.00 on a single held-out file. The one
-miss, case 04, is a data problem rather than a model problem: only cars 01–04 have
-cabin readings in that file, and only in whole degrees.
+![ACV: each car's temperature relative to the train median, per case (the physics cross-check)](charts/acv_car_scores.png)
 
-| Method | c01 | c02 | c03 | c04 | c05 | c06 | Test pick (margin) |
+Leave-one-case-out (fit on 5 cases, test on the 6th): the true car ranks 1st in 5 of 6
+cases and 2nd in 1 (score 0.979; a random ordering scores 0.5625). Expect 0.88–1.00 on
+a single held-out file. The one miss, case 04, is a data problem rather than a model
+problem: only cars 01–04 have cabin readings in that file, and only in whole degrees.
+
+| Method | c01 | c02 | c03 | c04 | c05 | c06 | Test pick |
 |---|---|---|---|---|---|---|---|
-| **Cabin temp vs car median (used)** | 1 | 1 | 1 | 2 | 1 | 1 | **Car 01** (+0.035 °C) |
+| **Trained ranker, 4 temperature features (used)** | 1 | 1 | 1 | 2 | 1 | 1 | **Car 01** (p = 0.88) |
+| Trained ranker, all 9 logged signals | 1 | 1 | 1 | 3 | 1 | 1 | Car 04 |
+| Cabin temp vs car median (physics, cross-check) | 1 | 1 | 1 | 2 | 1 | 1 | Car 01 (+0.035 °C) |
 | Valid, cooling-mode rows only | 1 | 1 | 1 | n/a | 1 | 1 | Car 01 (+0.042) |
 | Cabin temp vs each car's own setpoint | 1 | 1 | 1 | 2 | 1 | 1 | Car 01 (+0.166) |
 | Warmest half of timestamps only | 1 | 1 | 1 | 3 | 1 | 1 | Car 01 (+0.016) |
 | Share of time in Full Cooling | 2 | 2 | 3 | n/a | 6 | 7 | no signal |
 | Share of time load-halved | 1 | 2 | 3 | n/a | 4 | 6 | no signal |
 
-(Numbers are the rank of the true faulty car; 1 = correct.) On the test file every
-temperature variant picks Car 01. Relative to each car's own setpoint, the margin is
-almost 5× larger, which suggests the runner-up is warmer because of a higher setpoint,
-not a leak. Caveat: the method was compared against other candidates on the same six
-cases, which is selection on the evaluation set. It is trusted because it was the
-physics prediction going in, not the winner of a search.
+(Numbers are the rank of the true faulty car; 1 = correct. The trained rows are
+leave-one-case-out.) The trained ranker and the physics score pick the same car on the
+test file and differ only in 2nd and 3rd place (04 before 03). Relative to each car's
+own setpoint, the physics margin is almost 5× larger, which suggests the runner-up is
+warmer because of a higher setpoint, not a leak. Adding the other logged signals
+(cooling mode, load halving, manual control, spread) made the model worse on 6 cases,
+so they are left out; with more labelled cases they may start to help. Caveat: these
+variants were compared on the same six cases, which is selection on the evaluation set.
+The trained ranker is used because it is a model that can learn from new cases, not
+because it scored higher: it ties the physics score.
 
 ### Rail: vibration features + soft-vote ensemble
 
@@ -272,6 +292,36 @@ below.
 - One test file is a genuine toss-up: Test9 is 65% Side II under the old model and
   65% Normal under the new one.
 
+## Evidence and priority (for root cause analysis)
+
+Every `detail` also carries three fields for the app's root cause analysis:
+
+- `evidence`: short findings, each comparing this file with the training data.
+- `priority`: `low`, `medium` or `high`.
+- `priority_reason`: one sentence saying why.
+
+The app sends the whole result to Gemini (`ps3/rca.py`), so its cause and action text
+can quote these numbers instead of guessing how serious a fault is. The fields never
+change a prediction. Each fit script saves the training reference values with its model;
+Door's are constants in `door.py`.
+
+| Subsystem | Evidence compares | High | Medium | Low |
+|---|---|---|---|---|
+| Door | the worst cycle's current ratio with training cycles (normal ≤ 1.074×, abnormal 1.141–1.731×, median 1.323×); warns when over half of one operation's cycles are flagged | worst cycle ≥ 1.323×, or over half of one operation flagged | milder abnormal cycles | no abnormal cycle |
+| SHM | damage and largest amplitude with the 64 training files; the model vs Miner's-rule gap with its training range; remaining capacity 1 − D | D ≥ 1, the failure criterion | D ≥ 0.5, half the capacity used (a policy choice) | D < 0.5 |
+| ACV | the top car's excess with training leaking cars (0.122–1.272 °C) and normal cars (at most 0.250 °C); the physics cross-check | excess above every normal training car, and physics agrees | one of the two | neither |
+| Rail | the loudest axle box and the side average with the 40 Normal training files closest in speed, because vibration rises with speed (r = 0.85) | corrugation with probability ≥ 0.7 | corrugation below 0.7, or Normal with ≥ 30% corrugation probability | Normal |
+
+A stationary Rail recording is capped at medium, because its spectral features are
+unreliable.
+
+On the test data: Door is high (worst cycle +37.9%). ACV is medium: the model gives
+car 01 88% and physics agrees, but car 01's excess (0.099 °C) is weaker than any
+training leak.
+Rail Test9 is medium (predicted Normal, 35% corrugation; its Side II loudest axle box is
+above 98% of speed-matched Normal files). SHM test02 is medium (D = 0.81, 19% capacity
+left).
+
 ## Validation
 
 ### How each model is validated
@@ -285,7 +335,7 @@ tested by a model that never saw it.
 | Rail | 5 folds (fit on 80%, test on 20%), repeated over 20 random splits | feature scaling, all three models |
 | SHM | leave-one-out: fit on 63 files, test on the 64th, 64 times | feature scaling, ridge regression and its regularisation |
 | Door | 5 folds × 5 seeds | the ratio threshold |
-| ACV | nothing is fitted, so every training case is an honest test | — |
+| ACV | leave-one-case-out: fit on 5 cases, test on the 6th, 6 times | the logistic-regression weights |
 
 **Why not one 80/20 split?** A single 20% test split would hold only about 3 Side I
 files, so the score would swing by about ±0.1 depending on which files landed in it.
@@ -305,8 +355,8 @@ example by operating condition or by file.
 - **Door: by cycle.** There is only one training stream, so cycles are the units. The
   threshold is fitted on the training folds. The per-file baseline uses only unlabelled
   current readings, which are also available for a new test file.
-- **ACV: by case.** Each case is a different train, and nothing is fitted, so each case
-  is its own test.
+- **ACV: by case.** Each case is a different train, so the ranker is always tested on
+  a train it has not seen.
 
 **Assumption:** if several files come from the same run or the same stretch of track,
 cross-validation by file could be slightly optimistic. The data gives no way to check
@@ -334,13 +384,13 @@ with about 11 Side I files per fold.
 
 ### Honesty notes
 
-- Everything that is fitted (the Door threshold, the SHM model, the Rail features
-  and model, and any feature selection or weights) is fitted inside the training
-  folds only.
+- Everything that is fitted (the Door threshold, the SHM model, the ACV ranker, the
+  Rail features and model, and any feature selection or weights) is fitted inside the
+  training folds only.
 - Door's relative baseline uses only the test file's own unlabelled readings, which
   are available at prediction time.
-- Selection effects are stated where they exist: ACV was compared against other
-  candidates on its 6 cases, the Rail ensemble was picked from ~15 configurations
+- Selection effects are stated where they exist: ACV variants were compared on its
+  6 cases, the Rail ensemble was picked from ~15 configurations
   (the nested check above measures how much that matters), and the SHM model from 7
   (confirmed on 20 repeated splits).
 - Rail has a speed confound: in training, faults only occur above 35 km/h. A slow
@@ -421,7 +471,7 @@ Measured on one CPU core:
 | Subsystem | Time | Where the time goes |
 |---|---|---|
 | Door | 0.03 s for the whole test stream | — |
-| ACV | about 6 s per file | reading the Excel file; the ranking itself takes 13 ms |
+| ACV | 0.3–0.8 s per file (12 s for the 22,000-row case 04), about 9× faster than without `python-calamine` | reading the Excel file; the features and ranking take about 30 ms |
 | Rail | 0.28 s per 1-second recording | reading the CSV 150 ms, frequency analysis and features 121 ms, the three models 7 ms |
 | SHM | 0.6 s per file | rainflow counting and features; the model itself is instant |
 
@@ -432,44 +482,42 @@ almost all of the cost for ACV.
 
 ## Suggested improvements
 
-1. **Pin `scikit-learn==1.8.0`** in `requirements.txt`, since the Rail and SHM models
-   were saved with it.
-2. **Rail: time-localised features.** In a 1-second window, corrugation may sit under
+Done since the first version: `scikit-learn` pinned to 1.8.0; faster Excel reading for
+ACV (`python-calamine`); the Rail uncertainty flag, the Door baseline warning and SHM
+remaining capacity (all part of the evidence and priority fields).
+
+1. **Rail: time-localised features.** In a 1-second window, corrugation may sit under
    only a few wheels. Loudness peaks or impact counts in short windows (50–100 ms) per
    axle box could sharpen the signal.
-3. **Rail: axle-sequence consistency.** A corrugated stretch passes under each axle on
+2. **Rail: axle-sequence consistency.** A corrugated stretch passes under each axle on
    one side in turn, delayed by axle spacing ÷ speed. Cross-correlating band-passed
    envelopes along a side could separate real corrugation from one noisy sensor.
-4. **Rail: show uncertainty in the app.** Flag files whose top class probability is
-   below ~0.7 (such as Test9) as "needs inspection" instead of giving a hard label.
-5. **ACV: show the setpoint-adjusted margin** as supporting evidence in the
-   explanation, apply validity and cooling-mode masks when those columns exist, and
-   flag cars with no readings instead of silently ranking them last (as in case 04).
-6. **Door: add a sanity check in the app.** Warn when the current ratios show no clear
-   gap, or when more than half of one operation's cycles look abnormal, because that
-   is where the 40th-percentile baseline breaks.
-7. **SHM: report remaining life.** Showing 1 − damage, or how many similar segments
-   the component can take before damage reaches 1, would make the output more useful
-   for maintenance planning.
-8. **App: read ACV Excel files faster.** Almost all of ACV's 6 seconds is spent reading
-   the Excel file. pandas' `calamine` engine (`pd.read_excel(..., engine="calamine")`,
-   needs the `python-calamine` package) read the test file in 0.67 s instead of 5.9 s,
-   with the same ranking.
+3. **ACV: retrain as cases arrive.** Rerun `fit_acv.py` whenever a new fault case is
+   confirmed. With more cases, the signals that hurt with 6 (cooling mode, load
+   halving, manual control) may start to help.
+4. **ACV: data checks.** Apply validity and cooling-mode masks when those columns
+   exist, and flag cars with no readings instead of silently ranking them low (as in
+   case 04).
+5. **SHM: remaining life, not just capacity.** Showing how many similar segments the
+   component can take before damage reaches 1 would help maintenance planning.
 
 ## Retraining
 
-Door and ACV need no training.
+Door needs no training.
 
 ```bash
 python fit_shm.py  <SHM/Train dir>  <SHM/Train_Labels.csv>
 python fit_rail.py <Rail_Corrugation/Train dir> <Rail_Corrugation/Train_Labels.csv>
+python fit_acv.py  <ACV dir, holding Train/ and Train_Labels.csv>
 ```
 
 `fit_shm.py` fits the ridge model (`ps3/model_shm.joblib`) and the Miner's-rule
 constants used as a cross-check (`ps3/params_shm.json`), and prints the leave-one-out
 MAPE for both. `fit_rail.py` takes a few minutes for 272 files and caches features to
 `rail_feats_v2.pkl`. It prints the cross-validated macro F1 and saves
-`ps3/model_rail.joblib`.
+`ps3/model_rail.joblib`. `fit_acv.py` takes about 15 s with `python-calamine`, prints leave-one-case-out rank
+decay for the ranker and for the physics score, and saves `ps3/model_acv.joblib`. Each
+script also saves the training reference values used for the evidence in `detail`.
 
 ## Generating submissions
 
@@ -573,8 +621,11 @@ ps3/
     model_shm.joblib    SHM model (ridge regression)
     params_shm.json     Miner's-rule m and C (cross-check shown in the app)
     model_rail.joblib   Rail model (soft-vote ensemble)
+    model_acv.joblib    ACV model (logistic-regression ranker)
+    rca.py              Gemini root cause analysis, called by the app
 fit_shm.py              refits the SHM model and m, C
 fit_rail.py             refits the Rail ensemble
+fit_acv.py              refits the ACV ranker
 make_submissions.py     offline submission generator (format check)
 requirements.txt
 submission/             four formatted CSVs

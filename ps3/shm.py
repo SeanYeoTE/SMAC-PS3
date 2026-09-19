@@ -21,6 +21,7 @@ import pandas as pd
 PARAMS_PATH = os.path.join(os.path.dirname(__file__), "params_shm.json")
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "model_shm.joblib")
 DAMAGE_EXPONENTS = np.arange(3.0, 7.01, 0.5)
+REVIEW_DAMAGE = 0.5        # priority "medium" from half the fatigue capacity used (policy, not learned)
 _P = None
 _M = None
 
@@ -128,9 +129,56 @@ def predict(path: str) -> dict:
             "sn_exponent_m": p["m"],
             "sn_constant_C": p["C"],
             "damage_by_amplitude_band": bands[:4],
+            "remaining_capacity": round(max(0.0, 1.0 - D), 4),
+            **_evidence(M["reference"], D, float(D_formula), float(c[:, 0].max()), bands),
             "note": "A handful of the largest stress swings drive most of the "
                     "fatigue damage: a swing twice as big does roughly "
                     f"{2 ** p['m']:.0f}x the damage, so small vibrations barely "
                     "matter compared to the few big ones.",
         },
     }
+
+
+def reference_stats(model, X: pd.DataFrame, y: np.ndarray, cyc: list) -> dict:
+    """Training damage values, largest amplitudes and model-vs-formula gaps;
+    saved with the model so each prediction can be compared with them."""
+    p = _params()
+    fit = np.exp(model.predict(X))
+    formula = np.array([damage_sum(c, p["m"]) / p["C"] for c in cyc])
+    gap = 100 * (fit / formula - 1)
+    return {"n_files": int(len(y)),
+            "damage_sorted": sorted(round(float(v), 6) for v in y),
+            "largest_amplitude_sorted": sorted(round(float(c[:, 0].max()), 4) for c in cyc),
+            "model_vs_formula_pct_range": [round(float(gap.min()), 2), round(float(gap.max()), 2)]}
+
+
+def _evidence(ref: dict, D: float, D_formula: float, amp_max: float, bands: list) -> dict:
+    """Findings measured against the training recordings, plus a priority."""
+    n = ref["n_files"]
+    dmg = np.asarray(ref["damage_sorted"])
+    below = float(np.searchsorted(dmg, D) / n)
+    amp_below = float(np.searchsorted(ref["largest_amplitude_sorted"], amp_max) / n)
+    gap = 100 * (D / D_formula - 1)
+    g_lo, g_hi = ref["model_vs_formula_pct_range"]
+
+    ev = [f"Predicted cumulative damage D = {D:.3f}: {max(0.0, 1 - D):.0%} of the fatigue "
+          "capacity remains (fatigue failure occurs at D >= 1).",
+          f"Higher than {below:.0%} of the {n} training recordings (their damage ranged "
+          f"{dmg[0]:.3f} to {dmg[-1]:.3f})"
+          + ("; this is outside that range, so the model is extrapolating."
+             if D < dmg[0] or D > dmg[-1] else ".")]
+    if bands:
+        ev.append(f"{bands[0]['share_of_damage']:.0%} of the damage comes from stress "
+                  f"amplitudes {bands[0]['amplitude_range']}; the largest amplitude "
+                  f"({amp_max:.1f}) is higher than in {amp_below:.0%} of the training recordings.")
+    ev.append(f"Model and Miner's-rule formula differ by {gap:+.1f}% (training: {g_lo:+.1f}% "
+              f"to {g_hi:+.1f}%)" + (": unusual for this model, treat with caution."
+                                     if not g_lo <= gap <= g_hi else "."))
+
+    if D >= 1:
+        priority, reason = "high", "D >= 1: the fatigue failure criterion is reached."
+    elif D >= REVIEW_DAMAGE:
+        priority, reason = "medium", f"More than half of the fatigue capacity is used ({D:.0%})."
+    else:
+        priority, reason = "low", f"{1 - D:.0%} of the fatigue capacity remains."
+    return {"evidence": ev, "priority": priority, "priority_reason": reason}
