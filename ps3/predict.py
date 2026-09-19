@@ -11,7 +11,7 @@ Or dispatch by name, which is what the FastAPI route should do:
     predict.run("shm", path)
 
 Every result carries a `detail` dict meant to be rendered directly in the UI.
-Nothing here trains; fit_shm.py and fit_rail.py produce the model files.
+Nothing here trains; fit_shm.py, fit_rail.py and fit_acv.py produce the model files.
 
 Command line (from the repo root), for a single file or a whole folder:
 

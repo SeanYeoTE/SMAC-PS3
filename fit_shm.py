@@ -1,9 +1,11 @@
 """Fits the SHM models on the training files:
   1. Miner's-rule constants m and C -> ps3/params_shm.json (used as a cross-check
      and for the explanation shown in the app);
-  2. the prediction model, ridge regression on rainflow damage sums + signal
-     statistics -> ps3/model_shm.joblib.
-Prints leave-one-out MAPE for both (64 files: 2.76% formula, 2.31% model)."""
+  2. the prediction model, ridge regression on rainflow damage sums
+     -> ps3/model_shm.joblib, together with the training reference values used
+     for the evidence in `detail`.
+Both use fatpack rainflow cycles with 64 load classes (see ps3/shm.py).
+Prints the formula's in-sample MAPE and the model's leave-one-out MAPE."""
 import json, sys, os
 import numpy as np, pandas as pd, joblib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -28,7 +30,7 @@ def main(train_dir, labels_csv, out=None):
     print(f"formula: m={p['m']}  C={p['C']:.4g}  in-sample MAPE={p['in_sample_mape']:.2%}  -> {out}")
 
     # 2. ridge regression, validated leave-one-out
-    F = pd.DataFrame([shm.features(x, c) for x, c in zip(series, cyc)])
+    F = pd.DataFrame([shm.features(c) for c in cyc])
     X = F[sorted(F.columns)]
     ly = np.log(y)
     pred = np.empty(len(y))
@@ -39,7 +41,8 @@ def main(train_dir, labels_csv, out=None):
     model = shm.make_model().fit(X, ly)
     fit = np.exp(model.predict(X))
     print(f"model: in-sample MAPE={np.mean(np.abs(fit - y) / y):.2%}")
-    joblib.dump({"model": model, "features": list(X.columns)}, shm.MODEL_PATH)
+    joblib.dump({"model": model, "features": list(X.columns),
+                 "reference": shm.reference_stats(model, X, y, cyc)}, shm.MODEL_PATH)
     print("saved", shm.MODEL_PATH)
 
 if __name__ == "__main__":

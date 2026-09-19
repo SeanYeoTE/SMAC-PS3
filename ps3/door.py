@@ -26,11 +26,20 @@ Two findings this is built on:
 import numpy as np
 import pandas as pd
 
+from .urgency import urgency
+
 CURRENT = "Motor current(mA)"
 CLOSING = "Door is closing"
 GAP_SECONDS = 1.0
 BASELINE_Q = 0.40          # firmly inside the normal cluster while abnormals < 50%
 RATIO_THRESHOLD = 1.107    # midpoint of the training margin (1.074 / 1.141)
+
+# Train.csv reference (80 normal / 30 abnormal cycles), used only for the
+# evidence and priority in `detail`; the prediction uses RATIO_THRESHOLD alone
+TRAIN_NORMAL_RATIO_MAX = 1.074
+TRAIN_ABNORMAL_RATIO_MIN = 1.141
+TRAIN_ABNORMAL_RATIO_MEDIAN = 1.323
+TRAIN_ABNORMAL_RATIO_MAX = 1.731
 
 
 def parse_time(s: str) -> pd.Timestamp:
@@ -82,6 +91,9 @@ def predict(path: str) -> dict:
         operation=np.where(seg["is_close"] == 1, "Close", "Open"),
         excess_pct=((seg["ratio"] - 1) * 100).round(1),
     )[["operation", "rows", "cur_mean", "baseline", "ratio", "excess_pct", "abnormal"]]
+    ev = _evidence(seg.assign(operation=detail["operation"],
+                              start_time=out["start_time"].to_numpy()))
+    worst = seg.loc[seg["ratio"].idxmax()] if len(seg) else None
 
     return {
         "segments": out.reset_index(drop=True),
@@ -92,6 +104,9 @@ def predict(path: str) -> dict:
                              for k, v in seg.groupby("is_close")["baseline"].first().items()},
             "ratio_threshold": RATIO_THRESHOLD,
             "per_segment": detail.round(3).reset_index(drop=True),
+            **ev,
+            "urgency": None if worst is None else cycle_urgency(
+                worst["cur_mean"], worst["baseline"], "Close" if worst["is_close"] else "Open"),
             "note": "Each cycle's motor current is compared against the typical "
                     "current for that same kind of cycle (opening or closing) in "
                     "this same recording, rather than a fixed number shared across "
@@ -99,3 +114,60 @@ def predict(path: str) -> dict:
                     "or sensor normally runs a bit higher or lower than others.",
         },
     }
+
+
+def _evidence(seg: pd.DataFrame) -> dict:
+    """Findings measured against the Train.csv cycles, plus a priority."""
+    n, n_ab = len(seg), int(seg["abnormal"].sum())
+    if n == 0:
+        return {"evidence": ["No door cycles were found in this recording."],
+                "priority": "low", "priority_reason": "Nothing to assess."}
+    by_op = seg.groupby("operation")["abnormal"].agg(["sum", "size"])
+    counts = ", ".join(f"{op} {int(r['sum'])} of {int(r['size'])}" for op, r in by_op.iterrows())
+    worst = seg.loc[seg["ratio"].idxmax()]
+    ev = [f"{n_ab} of {n} cycles drew at least {RATIO_THRESHOLD}x the typical current "
+          f"for their operation in this recording ({counts}).",
+          f"Worst cycle: {worst['operation']} starting {worst['start_time']}, "
+          f"{worst['ratio']:.3f}x its baseline ({(worst['ratio'] - 1) * 100:+.1f}%). In "
+          f"training, normal cycles stayed at or below {TRAIN_NORMAL_RATIO_MAX}x and "
+          f"abnormal cycles ranged {TRAIN_ABNORMAL_RATIO_MIN}x to "
+          f"{TRAIN_ABNORMAL_RATIO_MAX}x (median {TRAIN_ABNORMAL_RATIO_MEDIAN}x)."]
+    crowded = [op for op, r in by_op.iterrows() if r["sum"] > r["size"] / 2]
+    if crowded:
+        ev.append(f"More than half of the {' and '.join(crowded)} cycles are flagged, so "
+                  "this recording's baseline may itself be raised and severity understated; "
+                  "compare against a known healthy cycle.")
+
+    if n_ab == 0:
+        priority = "low"
+        reason = (f"No cycle exceeded {RATIO_THRESHOLD}x its baseline; the worst was "
+                  f"{(worst['ratio'] - 1) * 100:+.1f}%.")
+    elif worst["ratio"] >= TRAIN_ABNORMAL_RATIO_MEDIAN or crowded:
+        priority = "high"
+        why = []
+        if worst["ratio"] >= TRAIN_ABNORMAL_RATIO_MEDIAN:
+            why.append(f"the worst cycle drew {(worst['ratio'] - 1) * 100:+.1f}% current, at "
+                       "or above a typical confirmed abnormal cycle in training")
+        if crowded:
+            why.append(f"most {' and '.join(crowded)} cycles are affected")
+        reason = "; ".join(why)
+        reason = reason[0].upper() + reason[1:] + ": risk of door jamming and motor overload."
+    else:
+        priority = "medium"
+        reason = (f"{n_ab} abnormal cycle(s), milder than a typical confirmed abnormal "
+                  f"cycle in training (worst {(worst['ratio'] - 1) * 100:+.1f}% vs median "
+                  f"{(TRAIN_ABNORMAL_RATIO_MEDIAN - 1) * 100:+.1f}%).")
+    return {"evidence": ev, "priority": priority, "priority_reason": reason}
+
+
+def cycle_urgency(cur_mean: float, baseline: float, operation: str) -> dict:
+    """How far one cycle's current is above this door's normal current for the
+    same operation; the alert level is RATIO_THRESHOLD (10.7% above normal)."""
+    pct = (cur_mean / baseline - 1) * 100
+    thr = (RATIO_THRESHOLD - 1) * 100
+    word = "above" if pct >= 0 else "below"
+    ing = "opening" if operation == "Open" else "closing"
+    return urgency("normal", f"motor current while {ing} vs this door's normal {ing} current",
+                   "mA", baseline, cur_mean, pct, thr,
+                   f"{abs(pct):.1f}% {word} this door's normal {ing} current; "
+                   f"alert at {thr:.1f}% above ({pct / thr:.1f}x the alert level)")
