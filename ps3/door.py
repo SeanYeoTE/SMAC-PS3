@@ -116,6 +116,20 @@ def predict(path: str) -> dict:
     }
 
 
+def prediction_csv(result: dict, segment_prefix: str = "test") -> pd.DataFrame:
+    """Return door predictions in the same schema as Train_Segments_Answer.csv."""
+    segments = result["segments"].reset_index(drop=True)
+    per_segment = result["detail"]["per_segment"].reset_index(drop=True)
+    return pd.DataFrame({
+        "segment_id": [f"{segment_prefix}_seg_{i:03d}" for i in range(1, len(segments) + 1)],
+        "start_time": segments["start_time"],
+        "end_time": segments["end_time"],
+        "operation": per_segment["operation"],
+        "status": segments["prediction"],
+        "n_rows": per_segment["rows"].astype(int),
+    })
+
+
 def _evidence(seg: pd.DataFrame) -> dict:
     """Findings measured against the Train.csv cycles, plus a priority."""
     n, n_ab = len(seg), int(seg["abnormal"].sum())

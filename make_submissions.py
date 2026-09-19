@@ -23,10 +23,11 @@ def main(root, outdir="submission"):
     print(f"shm  : {len(rows)} files")
 
     f = f"{root}/Door/Test.csv"
-    seg = predict.door(f)["segments"]
+    result = predict.door(f)
+    seg = predict.door_prediction_csv(result)
     seg.to_csv(f"{outdir}/door_predictions.csv", index=False)
     print(f"door : {len(seg)} segments, "
-          f"{int((seg.prediction != 'Normal').sum())} abnormal")
+          f"{int((seg.status != 'Normal').sum())} abnormal")
 
     rows = [{"file_id": os.path.basename(f), "ranked_cars": predict.acv(f)["ranked_cars"]}
             for f in sorted(glob.glob(f"{root}/ACV/Test/*.xlsx"))]

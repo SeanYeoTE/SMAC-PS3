@@ -1,4 +1,4 @@
-import { formatDoorTimestamp, formatNowTimestamp } from "@/lib/format";
+import { formatNowTimestamp } from "@/lib/format";
 import { summarizeResult } from "@/lib/summary";
 import type { BatchItem, PredictResult, SubsystemKey } from "@/lib/types";
 
@@ -18,26 +18,21 @@ function toCsvLF(rows: (string | number)[][]): string {
 
 function doorCsv(result: Extract<PredictResult, { subsystem: "door" }>): string {
   const { segments, detail } = result;
-  const rows: (string | number)[][] = [["Start", "End", "Operation", "Result", "Ratio", "Excess %"]];
+  const rows: (string | number)[][] = [
+    ["segment_id", "start_time", "end_time", "operation", "status", "n_rows"],
+  ];
   segments.forEach((s, i) => {
     const seg = detail.per_segment[i];
     rows.push([
-      formatDoorTimestamp(s.start_time),
-      formatDoorTimestamp(s.end_time),
+      `test_seg_${String(i + 1).padStart(3, "0")}`,
+      s.start_time,
+      s.end_time,
       seg?.operation ?? "",
       s.prediction,
-      seg ? seg.ratio.toFixed(3) : "",
-      seg ? seg.excess_pct.toFixed(1) : "",
+      seg?.rows ?? "",
     ]);
   });
-  rows.push(
-    [],
-    ["Summary"],
-    ["Cycles checked", detail.n_segments],
-    ["Abnormal cycles", detail.n_abnormal],
-    ["Ratio threshold", detail.ratio_threshold],
-  );
-  return toCsv(rows);
+  return toCsvLF(rows);
 }
 
 function shmCsv(result: Extract<PredictResult, { subsystem: "shm" }>): string {
@@ -155,10 +150,24 @@ export function downloadBatchSummaryCsv(subsystem: string, items: BatchItem[]): 
 export function predictionsCsv(subsystem: SubsystemKey, items: BatchItem[]): string {
   const done = items.filter((it): it is Extract<BatchItem, { status: "done" }> => it.status === "done");
   if (subsystem === "door") {
-    const rows: (string | number)[][] = [["start_time", "end_time", "prediction"]];
+    const rows: (string | number)[][] = [
+      ["segment_id", "start_time", "end_time", "operation", "status", "n_rows"],
+    ];
+    let segmentNumber = 1;
     for (const item of done) {
       const result = item.result as Extract<PredictResult, { subsystem: "door" }>;
-      for (const seg of result.segments) rows.push([seg.start_time, seg.end_time, seg.prediction]);
+      result.segments.forEach((seg, i) => {
+        const detail = result.detail.per_segment[i];
+        rows.push([
+          `test_seg_${String(segmentNumber).padStart(3, "0")}`,
+          seg.start_time,
+          seg.end_time,
+          detail?.operation ?? "",
+          seg.prediction,
+          detail?.rows ?? "",
+        ]);
+        segmentNumber += 1;
+      });
     }
     return toCsvLF(rows);
   }

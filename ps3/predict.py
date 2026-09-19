@@ -34,7 +34,7 @@ SUBSYSTEMS = {
         "fn": _door.predict,
         "label": "Train Door",
         "accepts": [".csv"],
-        "returns": "one row per detected cycle: start_time, end_time, prediction",
+        "returns": "one row per detected cycle in Train_Segments_Answer format",
         "metric": "IoU-weighted F1",
     },
     "acv": {
@@ -63,8 +63,9 @@ def run(subsystem: str, path: str) -> dict:
 
 
 shm, door, acv, rail = _shm.predict, _door.predict, _acv.predict, _rail.predict
+door_prediction_csv = _door.prediction_csv
 
-__all__ = ["run", "shm", "door", "acv", "rail", "SUBSYSTEMS"]
+__all__ = ["run", "shm", "door", "door_prediction_csv", "acv", "rail", "SUBSYSTEMS"]
 
 
 def main(argv=None) -> None:
@@ -88,7 +89,12 @@ def main(argv=None) -> None:
         raise SystemExit(f"no {'/'.join(accepts)} files found in {a.input}")
 
     if a.subsystem == "door":
-        out = pd.concat([run("door", f)["segments"] for f in files], ignore_index=True)
+        frames = []
+        for f in files:
+            result = run("door", f)
+            prefix = os.path.splitext(os.path.basename(f))[0].lower()
+            frames.append(_door.prediction_csv(result, prefix))
+        out = pd.concat(frames, ignore_index=True)
     elif a.subsystem == "acv":
         out = pd.DataFrame([{"file_id": os.path.basename(f), "ranked_cars": run("acv", f)["ranked_cars"]}
                             for f in files])
