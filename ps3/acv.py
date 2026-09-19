@@ -5,12 +5,16 @@ warmer than the other cars of the same train under the same ambient and duty
 cycle. Every feature is therefore measured against the other cars at the same
 timestamp, which cancels ambient temperature, time of day and route.
 
-Model: logistic regression (make_model) that scores each car from four
+Model: logistic regression (make_model) that scores each car from five
 temperature features, z-scored across the cars of the file:
-  dev            mean of (car indoor temp - median indoor temp of all cars)
-  dev_hot        the same, over the hotter half of the recording only
-  warmest_share  share of timestamps at which the car is the warmest
-  dev_setpoint   mean of (indoor temp - setpoint), relative to the other cars
+  dev              mean of (car indoor temp - median indoor temp of all cars)
+  dev_hot          the same, over the hotter half of the recording only
+  warmest_share    share of timestamps at which the car is the warmest
+  dev_setpoint     mean of (indoor temp - setpoint), relative to the other cars
+  dev_outdoor_hot  dev over the hottest quarter by outdoor temperature, when the
+                   cooling load is highest: a leaking unit falls behind most there
+                   (it puts the leaking car first in all 5 cases that log outdoor
+                   temperature)
 fit_acv.py trains it on the 6 labelled cases (48 cars, 6 of them leaking).
 Exactly one car leaks per file, so each car's probability is normalised
 across the cars of the file and the cars are ranked by it.
@@ -33,7 +37,7 @@ import numpy as np
 import pandas as pd
 
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "model_acv.joblib")
-FEATURES = ["dev", "dev_hot", "warmest_share", "dev_setpoint"]
+FEATURES = ["dev", "dev_hot", "warmest_share", "dev_setpoint", "dev_outdoor_hot"]
 CAR_COL = re.compile(r"^Car (\d{2}) - (.+)$")
 _M = None
 
@@ -79,9 +83,9 @@ def _num(x: pd.DataFrame | None) -> pd.DataFrame | None:
     return None if x is None else x.apply(pd.to_numeric, errors="coerce").replace(0, np.nan)
 
 
-def car_features(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
+def car_features(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """-> (model inputs, one row per car, z-scored across the cars of this
-    file; physics score per car in degC)."""
+    file; the same features unscaled, in degC where they are temperatures)."""
     I = _num(_wide(df, "Indoor Average Temperature"))
     if I is None:
         raise ValueError("no per-car indoor temperature column found")
@@ -96,13 +100,17 @@ def car_features(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
     if T is not None:
         G = I - T
         f["dev_setpoint"] = G.sub(G.median(axis=1), axis=0).mean()
+    O = _num(_wide(df, "Outdoor Average Temperature"))
+    if O is not None and O.notna().any().any():
+        o = O.median(axis=1)
+        f["dev_outdoor_hot"] = D[o >= o.quantile(0.75)].mean()
 
     z = (f - f.mean()) / f.std().replace(0, np.nan)
-    return z.reindex(columns=FEATURES).fillna(0.0), f["dev"]
+    return z.reindex(columns=FEATURES).fillna(0.0), f.reindex(columns=FEATURES)
 
 
 def make_model():
-    """Logistic regression on the four z-scored features; balanced class
+    """Logistic regression on the five z-scored features; balanced class
     weights because only 1 car in 8 leaks."""
     from sklearn.linear_model import LogisticRegression
     return LogisticRegression(C=0.5, class_weight="balanced", max_iter=5000)
@@ -119,7 +127,8 @@ def car_probabilities(model, X: pd.DataFrame) -> pd.Series:
 def predict(path: str) -> dict:
     df = read(path) if isinstance(path, str) else path
     M = _model()
-    X, physics = car_features(df)
+    X, raw = car_features(df)
+    physics = raw["dev"]
     prob = car_probabilities(M["model"], X[M["features"]])
 
     # manual control by the crew is a corroborating signal only, shown in the UI
@@ -140,12 +149,12 @@ def predict(path: str) -> dict:
     p_top = float(order.at[top, "prob"])
     confidence = "high" if p_top >= 0.8 else "medium" if p_top >= 0.5 else "low"
 
-    ev = _evidence(M["reference"], top, order, physics_top, margin)
+    ev = _evidence(M["reference"], top, order, physics_top, margin, raw["dev_outdoor_hot"])
     return {
         "ranked_cars": "|".join(ranked),
         "prediction": top,
         "detail": {
-            "model": "logistic regression on 4 cabin-temperature features, trained on 6 cases",
+            "model": "logistic regression on 5 cabin-temperature features, trained on 6 cases",
             "probability": {c: round(float(v), 4) for c, v in order["prob"].items()},
             "scores_degC": {c: round(float(v), 4) for c, v in order["dev"].items()},
             "margin_over_runner_up_degC": round(margin, 4),
@@ -164,7 +173,7 @@ def predict(path: str) -> dict:
 
 
 def _evidence(ref: dict, top: str, order: pd.DataFrame, physics_top: str,
-              margin: float) -> dict:
+              margin: float, hot: pd.Series) -> dict:
     """Findings measured against the six training cases, plus a priority."""
     dev = float(order.at[top, "dev"])
     lo, hi = ref["leak_dev_degC_min"], ref["leak_dev_degC_max"]
@@ -177,19 +186,33 @@ def _evidence(ref: dict, top: str, order: pd.DataFrame, physics_top: str,
         f"and no normal car ran more than {normal_max:.3f} C warmer.",
         f"Model probability that car {top} is the leaking car: {p_top:.0%} "
         f"(next: car {order.index[1]}, {float(order['prob'].iloc[1]):.0%}).",
+        *([f"In the hottest quarter of the recording (outdoor temperature), car {top} runs "
+           f"{hot[top]:.3f} C warmer than the median car (next: car {hot.drop(top).idxmax()}, "
+           f"{hot.drop(top).max():.3f} C); in training, leaking cars ran "
+           f"{ref['leak_hot_degC_min']:.3f} to {ref['leak_hot_degC_max']:.3f} C warmer there and "
+           f"no normal car more than {ref['normal_hot_degC_max']:.3f} C."]
+          if hot.notna().any() else []),
         f"Physics cross-check: the warmest car relative to the others is car "
         f"{physics_top}" + (" (agrees)." if physics_top == top else
                             f" (disagrees; car {top} is {-margin:.3f} C cooler than it)."),
     ]
-    if dev >= normal_max and physics_top == top:
+    # the hottest-quarter excess separates leaking from normal cars cleanly in
+    # training (leaks >= 0.259 C, normal <= 0.175 C); the overall excess does not,
+    # so it is only the fallback when a file has no outdoor temperature
+    if pd.notna(hot.get(top)):
+        excess, limit, where = float(hot[top]), ref["normal_hot_degC_max"], "under the highest cooling load"
+    else:
+        excess, limit, where = dev, normal_max, "over the whole recording"
+    signature = excess > limit
+    if signature and physics_top == top:
         priority = "high"
-        reason = ("Car temperature excess is above every normal car in training "
-                  "and the physics cross-check agrees.")
-    elif dev >= normal_max or physics_top == top:
+        reason = (f"Car {top} runs warmer {where} than any normal car in training "
+                  f"({excess:.3f} vs at most {limit:.3f} C), and the physics cross-check agrees.")
+    elif signature or physics_top == top:
         priority = "medium"
         reason = ("Leak signature present but not conclusive: "
                   + ("the physics cross-check disagrees." if physics_top != top else
-                     "the excess is within the range seen on normal cars."))
+                     f"the excess {where} is within the range seen on normal cars."))
     else:
         priority = "low"
         reason = ("No car stands out beyond the range of normal cars and the "

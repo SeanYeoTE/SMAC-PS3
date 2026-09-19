@@ -13,7 +13,7 @@ explanation that the app can show on screen.
 |---|---|---|---|---|
 | **Door** | Find each open/close cycle, label it Normal or Abnormal resistance | Time-gap segmentation + motor current relative to the file's own baseline | **0.996** (110/110 on the full stream) | 5-fold × 5 seeds, 110 cycles |
 | **SHM** | Estimate cumulative fatigue damage | Ridge regression on rainflow damage sums, counted the way the labels were made | **0.995** (MAPE 0.54%) | leave-one-out, 64 files |
-| **ACV** | Rank the 8 cars by refrigerant-leak likelihood | Logistic regression on 4 cabin-temperature features, each relative to the other cars | **0.979** (true car 1st in 5 of 6 cases, 2nd in 1) | leave-one-case-out, 6 cases |
+| **ACV** | Rank the 8 cars by refrigerant-leak likelihood | Logistic regression on 5 cabin-temperature features, each relative to the other cars | **0.979** (true car 1st in 5 of 6 cases, 2nd in 1) | leave-one-case-out, 6 cases |
 | **Rail** | Normal / Side I / Side II corrugation | 73 vibration features + soft-vote ensemble, trained with mirrored fault recordings | **0.87 ± 0.03** macro F1 | 5-fold × 20 fresh seeds, 272 files |
 
 If these estimates hold, the Overall Score is roughly **0.95–0.96**. ACV (a single
@@ -189,15 +189,29 @@ the others under the same weather, time of day and route. Every feature is measu
 against the other cars at the same moment, which cancels all three.
 
 1. At each timestamp, each car's indoor temperature minus the median of all cars.
-2. Four features per car: the mean of that difference (`dev`, the physics score), the
+2. Five features per car: the mean of that difference (`dev`, the physics score), the
    same over the hotter half of the recording (`dev_hot`), the share of time the car is
-   the warmest (`warmest_share`), and indoor temperature minus setpoint, again relative
-   to the other cars (`dev_setpoint`). Each is z-scored across the cars of the file.
+   the warmest (`warmest_share`), indoor temperature minus setpoint, again relative
+   to the other cars (`dev_setpoint`), and the difference over the hottest quarter of
+   the recording by outdoor temperature (`dev_outdoor_hot`). Each is z-scored across the
+   cars of the file.
 3. A logistic regression trained on the 6 cases (48 cars, 6 of them leaking, balanced
    class weights) scores each car. Exactly one car leaks per file, so the scores are
    turned into probabilities that sum to 1, and the cars are ranked by them.
 
-Learned weights: `warmest_share` 1.25, `dev_hot` 0.67, `dev` 0.66, `dev_setpoint` 0.02.
+Learned weights: `warmest_share` 1.17, `dev_outdoor_hot` 0.58, `dev` 0.54, `dev_hot` 0.53,
+`dev_setpoint` −0.14.
+
+**The hottest quarter is where a leak shows.** A unit that has lost refrigerant falls
+behind most when the cooling load is highest. Over the hottest quarter of each recording
+(by outdoor temperature), the leaking cars in training ran 0.259–1.340 °C warmer than
+the median car and no normal car more than 0.175 °C, a clean gap. Over the whole
+recording the ranges overlap (leaking cars from 0.122 °C, normal cars up to 0.250 °C).
+On the test file, car 01 runs 0.319 °C warmer in the hottest quarter, against 0.089 °C
+for the next car (03). This signal ranks the leaking car first in all 5 training cases
+that log outdoor temperature. It can't lift the validation score, because the one miss
+(case 04) has no outdoor temperature, but it is the textbook symptom and it raises the
+model's probability for car 01 from 88% to 92%.
 
 The physics score (`dev` alone, ranked warmest to coolest) is kept in `detail` as a
 cross-check (`scores_degC`, `physics_top_car`, `physics_agrees`), and the share of time
@@ -215,9 +229,11 @@ problem: only cars 01–04 have cabin readings in that file, and only in whole d
 
 | Method | c01 | c02 | c03 | c04 | c05 | c06 | Test pick |
 |---|---|---|---|---|---|---|---|
-| **Trained ranker, 4 temperature features (used)** | 1 | 1 | 1 | 2 | 1 | 1 | **Car 01** (p = 0.88) |
+| **Trained ranker, 5 temperature features (used)** | 1 | 1 | 1 | 2 | 1 | 1 | **Car 01** (p = 0.92) |
+| Trained ranker, the same without the hottest quarter | 1 | 1 | 1 | 2 | 1 | 1 | Car 01 (p = 0.88) |
 | Trained ranker, all 9 logged signals | 1 | 1 | 1 | 3 | 1 | 1 | Car 04 |
 | Cabin temp vs car median (physics, cross-check) | 1 | 1 | 1 | 2 | 1 | 1 | Car 01 (+0.035 °C) |
+| Hottest quarter by outdoor temperature only | 1 | 1 | 1 | n/a | 1 | 1 | Car 01 (+0.230) |
 | Valid, cooling-mode rows only | 1 | 1 | 1 | n/a | 1 | 1 | Car 01 (+0.042) |
 | Cabin temp vs each car's own setpoint | 1 | 1 | 1 | 2 | 1 | 1 | Car 01 (+0.166) |
 | Warmest half of timestamps only | 1 | 1 | 1 | 3 | 1 | 1 | Car 01 (+0.016) |
@@ -335,15 +351,15 @@ Door's are constants in `door.py`.
 |---|---|---|---|---|
 | Door | the worst cycle's current ratio with training cycles (normal ≤ 1.074×, abnormal 1.141–1.731×, median 1.323×); warns when over half of one operation's cycles are flagged | worst cycle ≥ 1.323×, or over half of one operation flagged | milder abnormal cycles | no abnormal cycle |
 | SHM | damage and largest amplitude with the 64 training files; the model vs Miner's-rule gap with its training range; remaining capacity 1 − D | D ≥ 1, the failure criterion | D ≥ 0.5, half the capacity used (a policy choice) | D < 0.5 |
-| ACV | the top car's excess with training leaking cars (0.122–1.272 °C) and normal cars (at most 0.250 °C); the physics cross-check | excess above every normal training car, and physics agrees | one of the two | neither |
+| ACV | the top car's excess over the whole recording and in the hottest quarter, with training leaking and normal cars (hottest quarter: leaking 0.259–1.340 °C, normal at most 0.175 °C); the physics cross-check | hottest-quarter excess above every normal training car (the whole-recording excess if a file has no outdoor temperature), and physics agrees | one of the two | neither |
 | Rail | the loudest axle box and the side average with the 40 Normal training files closest in speed, because vibration rises with speed (r = 0.85) | corrugation with probability ≥ 0.7 | corrugation below 0.7, or Normal with ≥ 30% corrugation probability | Normal |
 
 A stationary Rail recording is capped at medium, because its spectral features are
 unreliable.
 
-On the test data: Door is high (worst cycle +37.9%). ACV is medium: the model gives
-car 01 88% and physics agrees, but car 01's excess (0.099 °C) is weaker than any
-training leak.
+On the test data: Door is high (worst cycle +37.9%). ACV is high: the model gives
+car 01 92%, physics agrees, and in the hottest quarter car 01 runs 0.319 °C warmer than
+the median car, more than any normal car in training (at most 0.175 °C).
 Rail Test9 is medium (Side II at 63%; its Side II loudest axle box is above 98% of
 speed-matched Normal files). SHM test02 is medium (D = 0.82, 18% capacity
 left).
