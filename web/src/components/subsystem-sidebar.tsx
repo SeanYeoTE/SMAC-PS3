@@ -1,4 +1,5 @@
 import { TrainFront } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   Sidebar,
   SidebarContent,
@@ -10,7 +11,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSkeleton,
-  useSidebar,
 } from "@/components/ui/sidebar";
 import { SUBSYSTEM_ICONS } from "@/lib/subsystem-meta";
 import type { SubsystemKey, SubsystemsResponse } from "@/lib/types";
@@ -26,10 +26,14 @@ export function SubsystemSidebar({
   selected: SubsystemKey | null;
   onSelect: (key: SubsystemKey) => void;
 }) {
-  const { setOpenMobile } = useSidebar();
+  const isMobile = useIsMobile();
+
+  // The mockup's mobile screens use a bottom tab bar instead of a sidebar drawer
+  // (MobileTabBar renders subsystem selection for the "Fleet" tab there instead).
+  if (isMobile) return null;
 
   return (
-    <Sidebar collapsible="offcanvas">
+    <Sidebar collapsible="none">
       <SidebarHeader>
         <div className="flex items-center gap-2 px-2 py-1">
           <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 ring-1 ring-primary/30">
@@ -60,10 +64,7 @@ export function SubsystemSidebar({
                       <SidebarMenuButton
                         aria-current={isSelected ? "page" : undefined}
                         isActive={isSelected}
-                        onClick={() => {
-                          onSelect(key);
-                          setOpenMobile(false);
-                        }}
+                        onClick={() => onSelect(key)}
                       >
                         <Icon aria-hidden="true" />
                         <span>{key.toUpperCase()}</span>

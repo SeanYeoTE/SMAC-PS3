@@ -1,6 +1,8 @@
 "use client";
 
 import { RcaText } from "@/components/results/rca-text";
+import { BreakdownSimulator, type SimulatorPoint } from "@/components/results/breakdown-simulator";
+import { EvidenceFeed, evidenceToFeed } from "@/components/results/evidence-feed";
 
 import { useMemo, useState } from "react";
 import { CheckCircle2, AlertTriangle, ChevronDown } from "lucide-react";
@@ -10,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
+import { StatTile } from "@/components/stat-tile";
 import { StatusBar } from "@/components/status-bar";
 import { StatusPill } from "@/components/status-pill";
 import { formatDoorTimestamp } from "@/lib/format";
@@ -64,6 +67,19 @@ export function DoorResult({
   const thresholdPct = (detail.ratio_threshold / maxRatio) * 100;
   const warnings = useMemo(() => dataQualityWarnings(detail), [detail]);
   const [sortMode, setSortMode] = useState<"abnormal" | "chronological">("abnormal");
+  const [scrubIndex, setScrubIndex] = useState(0);
+
+  const simPoints: SimulatorPoint[] = useMemo(
+    () =>
+      segments.map((s, i) => ({
+        x: segments.length > 1 ? (i / (segments.length - 1)) * 100 : 0,
+        label: `${s.prediction === "Normal" ? "OK" : "FAIL"} · cycle ${i + 1}`,
+        severity: s.prediction === "Normal" ? "good" : "bad",
+      })),
+    [segments],
+  );
+  const scrubbedSegment = segments[scrubIndex];
+  const scrubbedDetail = detail.per_segment[scrubIndex];
 
   const chartData = useMemo(
     () =>
@@ -96,6 +112,8 @@ export function DoorResult({
         </Alert>
       ))}
 
+      <div className="grid gap-3 lg:grid-cols-[1fr_320px]">
+      <div className="flex flex-col gap-3">
       <Card>
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-3">
@@ -117,6 +135,30 @@ export function DoorResult({
           <RcaText result={result} rca={rca} rcaStatus={rcaStatus} />
         </CardContent>
       </Card>
+
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <StatTile label="Cycles Found" value={detail.n_segments} />
+        <StatTile label="Abnormal" value={detail.n_abnormal} tone={detail.n_abnormal > 0 ? "bad" : "default"} />
+        <StatTile label="Priority" value={detail.priority.toUpperCase()} tone={detail.priority === "high" ? "bad" : "default"} />
+        <StatTile label="Times Threshold" value={detail.urgency?.times_threshold?.toFixed(2) ?? "—"} />
+      </div>
+
+      {scrubbedSegment && scrubbedDetail && (
+        <BreakdownSimulator
+          axisName="DOOR STREAM"
+          span={`${formatDoorTimestamp(segments[0].start_time)} → ${formatDoorTimestamp(segments.at(-1)!.end_time)}`}
+          points={simPoints}
+          ticks={[segments[0] ? formatDoorTimestamp(segments[0].start_time) : "", segments.at(-1) ? formatDoorTimestamp(segments.at(-1)!.end_time) : ""]}
+          index={scrubIndex}
+          onChange={setScrubIndex}
+        />
+      )}
+      {scrubbedSegment && scrubbedDetail && (
+        <p className="text-sm text-muted-foreground">
+          Cycle {scrubIndex + 1}: {scrubbedDetail.operation}, ratio {scrubbedDetail.ratio.toFixed(3)}× —{" "}
+          <span className={scrubbedSegment.prediction === "Normal" ? "text-emerald-700" : "text-red-700"}>{scrubbedSegment.prediction}</span>
+        </p>
+      )}
 
       <Card>
         <CardHeader>
@@ -234,6 +276,9 @@ export function DoorResult({
           </div>
         </div>
       </details>
+      </div>
+      <EvidenceFeed entries={evidenceToFeed(detail.evidence)} />
+      </div>
     </div>
   );
 }

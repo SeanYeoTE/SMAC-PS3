@@ -1,9 +1,13 @@
 import { RcaText } from "@/components/results/rca-text";
+import { BreakdownSimulator, type SimulatorPoint } from "@/components/results/breakdown-simulator";
+import { EvidenceFeed, evidenceToFeed } from "@/components/results/evidence-feed";
 import { TrainFront, AlertTriangle, ChevronDown } from "lucide-react";
+import { useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, XAxis, YAxis } from "recharts";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
+import { StatTile } from "@/components/stat-tile";
 import { StatusBar } from "@/components/status-bar";
 import { StatusPill } from "@/components/status-pill";
 import type { Tone } from "@/lib/status";
@@ -33,9 +37,23 @@ export function RailResult({
   const maxRms = Math.max(detail.side_I_rms, detail.side_II_rms) || 1;
   const topConfidence = detail.confidence[prediction] ?? 0;
   const needsInspection = topConfidence < LOW_CONFIDENCE;
+  const [scrubIndex, setScrubIndex] = useState(0);
+
+  const sides = [
+    { key: "Side I", rms: detail.side_I_rms },
+    { key: "Side II", rms: detail.side_II_rms },
+  ];
+  const simPoints: SimulatorPoint[] = sides.map((s, i) => ({
+    x: (i / (sides.length - 1)) * 100,
+    label: `${s.key} · ${s.rms.toFixed(5)}`,
+    severity: s.rms === maxRms ? "warn" : "neutral",
+  }));
+  const scrubbedSide = sides[scrubIndex];
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="grid gap-3 lg:grid-cols-[1fr_320px]">
+      <div className="flex flex-col gap-3">
       {needsInspection && (
         <Alert variant="warning">
           <AlertTriangle aria-hidden="true" />
@@ -79,6 +97,27 @@ export function RailResult({
           <RcaText result={result} rca={rca} rcaStatus={rcaStatus} />
         </CardContent>
       </Card>
+
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <StatTile label="Speed" value={`${detail.speed_kmh} km/h`} />
+        <StatTile label="Side I / II" value={detail.side_I_over_II.toFixed(2)} />
+        <StatTile label="Priority" value={detail.priority.toUpperCase()} tone={detail.priority === "high" ? "bad" : "default"} />
+        <StatTile label="Times Threshold" value={detail.urgency?.times_threshold?.toFixed(2) ?? "—"} />
+      </div>
+
+      <BreakdownSimulator
+        axisName="AXLE BOX SIDES"
+        span="Side I vs Side II"
+        points={simPoints}
+        ticks={["Side I", "Side II"]}
+        index={scrubIndex}
+        onChange={setScrubIndex}
+      />
+      {scrubbedSide && (
+        <p className="text-sm text-muted-foreground">
+          {scrubbedSide.key}: RMS {scrubbedSide.rms.toFixed(5)}.
+        </p>
+      )}
 
       <Card>
         <CardHeader>
@@ -134,6 +173,9 @@ export function RailResult({
           </p>
         </div>
       </details>
+      </div>
+      <EvidenceFeed entries={evidenceToFeed(detail.evidence)} />
+      </div>
     </div>
   );
 }

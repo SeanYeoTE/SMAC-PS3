@@ -1,8 +1,12 @@
 import { RcaText } from "@/components/results/rca-text";
+import { BreakdownSimulator, type SimulatorPoint } from "@/components/results/breakdown-simulator";
+import { EvidenceFeed, evidenceToFeed } from "@/components/results/evidence-feed";
 import { ChevronDown, Snowflake } from "lucide-react";
+import { useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, XAxis, YAxis } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
+import { StatTile } from "@/components/stat-tile";
 import { StatusPill } from "@/components/status-pill";
 import { confidenceTone } from "@/lib/status";
 import type { AcvResult as AcvResultData, Rca, RcaStatus } from "@/lib/types";
@@ -28,9 +32,19 @@ export function AcvResult({
     score: Number(detail.scores_degC[car]?.toFixed(3) ?? 0),
     isTop: car === prediction,
   }));
+  const [scrubIndex, setScrubIndex] = useState(0);
+
+  const simPoints: SimulatorPoint[] = rankedCars.map((car, i) => ({
+    x: rankedCars.length > 1 ? (i / (rankedCars.length - 1)) * 100 : 0,
+    label: `Car ${car}`,
+    severity: car === prediction ? "bad" : "neutral",
+  }));
+  const scrubbedCar = rankedCars[scrubIndex];
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="grid gap-3 lg:grid-cols-[1fr_320px]">
+      <div className="flex flex-col gap-3">
       <Card>
         <CardContent className="flex flex-col gap-4">
           <div className="flex items-start justify-between gap-3">
@@ -50,6 +64,29 @@ export function AcvResult({
           <RcaText result={result} rca={rca} rcaStatus={rcaStatus} />
         </CardContent>
       </Card>
+
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <StatTile label="Physics Agrees" value={detail.physics_agrees ? "Yes" : "No"} />
+        <StatTile label="Priority" value={detail.priority.toUpperCase()} tone={detail.priority === "high" ? "bad" : "default"} />
+        <StatTile label="Confidence" value={detail.confidence.toUpperCase()} />
+        <StatTile label="Times Threshold" value={detail.urgency?.times_threshold?.toFixed(2) ?? "—"} />
+      </div>
+
+      {scrubbedCar && (
+        <BreakdownSimulator
+          axisName="RANKED CARS"
+          span={`${rankedCars.length} cars`}
+          points={simPoints}
+          ticks={[rankedCars[0] ? `Car ${rankedCars[0]}` : "", rankedCars.at(-1) ? `Car ${rankedCars.at(-1)}` : ""]}
+          index={scrubIndex}
+          onChange={setScrubIndex}
+        />
+      )}
+      {scrubbedCar && (
+        <p className="text-sm text-muted-foreground">
+          Car {scrubbedCar}: {detail.scores_degC[scrubbedCar]?.toFixed(3) ?? "—"}°C vs median, {((detail.probability[scrubbedCar] ?? 0) * 100).toFixed(0)}% probability.
+        </p>
+      )}
 
       <Card>
         <CardHeader>
@@ -101,6 +138,9 @@ export function AcvResult({
           )}
         </dl>
       </details>
+      </div>
+      <EvidenceFeed entries={evidenceToFeed(detail.evidence)} />
+      </div>
     </div>
   );
 }

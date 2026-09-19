@@ -1,8 +1,12 @@
 import { RcaText } from "@/components/results/rca-text";
+import { BreakdownSimulator, type SimulatorPoint } from "@/components/results/breakdown-simulator";
+import { EvidenceFeed, evidenceToFeed } from "@/components/results/evidence-feed";
 import { ChevronDown, Gauge } from "lucide-react";
+import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, LabelList, XAxis, YAxis } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
+import { StatTile } from "@/components/stat-tile";
 import { StatusBar } from "@/components/status-bar";
 import type { Tone } from "@/lib/status";
 import type { Rca, RcaStatus, ShmResult as ShmResultData } from "@/lib/types";
@@ -30,9 +34,24 @@ export function ShmResult({
   const pct = prediction * 100;
   const tone = damageTone(prediction);
   const remainingPct = (1 - prediction) * 100;
+  const [scrubIndex, setScrubIndex] = useState(0);
+
+  const bands = detail.damage_by_amplitude_band;
+  const simPoints: SimulatorPoint[] = useMemo(
+    () =>
+      bands.map((b, i) => ({
+        x: bands.length > 1 ? (i / (bands.length - 1)) * 100 : 0,
+        label: `${b.amplitude_range} · ${(b.share_of_damage * 100).toFixed(0)}%`,
+        severity: b.share_of_damage >= 0.3 ? "bad" : b.share_of_damage >= 0.15 ? "warn" : "good",
+      })),
+    [bands],
+  );
+  const scrubbedBand = bands[scrubIndex];
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="grid gap-3 lg:grid-cols-[1fr_320px]">
+      <div className="flex flex-col gap-3">
       <Card>
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-3">
@@ -51,6 +70,29 @@ export function ShmResult({
           <RcaText result={result} rca={rca} rcaStatus={rcaStatus} />
         </CardContent>
       </Card>
+
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <StatTile label="Remaining Capacity" value={`${(detail.remaining_capacity * 100).toFixed(1)}%`} />
+        <StatTile label="Rainflow Cycles" value={detail.rainflow_cycles.toLocaleString()} />
+        <StatTile label="Priority" value={detail.priority.toUpperCase()} tone={detail.priority === "high" ? "bad" : "default"} />
+        <StatTile label="Times Threshold" value={detail.urgency?.times_threshold?.toFixed(2) ?? "—"} />
+      </div>
+
+      {scrubbedBand && (
+        <BreakdownSimulator
+          axisName="AMPLITUDE BANDS"
+          span={`${bands.length} bands`}
+          points={simPoints}
+          ticks={[bands[0]?.amplitude_range ?? "", bands.at(-1)?.amplitude_range ?? ""]}
+          index={scrubIndex}
+          onChange={setScrubIndex}
+        />
+      )}
+      {scrubbedBand && (
+        <p className="text-sm text-muted-foreground">
+          Band {scrubbedBand.amplitude_range}: {scrubbedBand.cycles.toLocaleString()} cycles, {(scrubbedBand.share_of_damage * 100).toFixed(1)}% of total damage.
+        </p>
+      )}
 
       <Card>
         <CardHeader>
@@ -110,6 +152,9 @@ export function ShmResult({
           </div>
         </dl>
       </details>
+      </div>
+      <EvidenceFeed entries={evidenceToFeed(detail.evidence)} />
+      </div>
     </div>
   );
 }
