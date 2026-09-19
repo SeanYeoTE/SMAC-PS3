@@ -112,18 +112,18 @@ export function DoorResult({
         </Alert>
       ))}
 
-      <div className="grid gap-3 lg:grid-cols-[1fr_320px]">
-      <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="flex min-w-0 flex-col gap-3">
       <Card>
         <CardContent className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-3">
             {allNormal ? (
               <CheckCircle2 className="size-8 shrink-0 text-emerald-600" aria-hidden="true" />
             ) : (
               <AlertTriangle className="size-8 shrink-0 text-red-600" aria-hidden="true" />
             )}
-            <div>
-              <p className="text-2xl font-semibold">
+            <div className="min-w-0">
+              <p className="text-xl font-semibold sm:text-2xl">
                 <span className="tabular-nums">
                   {detail.n_abnormal} of {detail.n_segments}
                 </span>{" "}
@@ -215,19 +215,35 @@ export function DoorResult({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Start</TableHead>
-                <TableHead>End</TableHead>
+                <TableHead>
+                  <span className="sm:hidden">Time</span>
+                  <span className="hidden sm:inline">Start</span>
+                </TableHead>
+                <TableHead className="hidden sm:table-cell">End</TableHead>
                 <TableHead>Result</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {orderedSegments.map((s) => (
                 <TableRow key={s._i}>
-                  <TableCell className="text-sm">{formatDoorTimestamp(s.start_time)}</TableCell>
-                  <TableCell className="text-sm">{formatDoorTimestamp(s.end_time)}</TableCell>
+                  <TableCell className="text-sm">
+                    {formatDoorTimestamp(s.start_time)}
+                    {/* phones: end time under the start time instead of its own column */}
+                    <span className="block text-xs text-muted-foreground sm:hidden">
+                      to {formatDoorTimestamp(s.end_time)}
+                    </span>
+                  </TableCell>
+                  <TableCell className="hidden text-sm sm:table-cell">{formatDoorTimestamp(s.end_time)}</TableCell>
                   <TableCell>
                     <StatusPill tone={s.prediction === "Normal" ? "good" : "bad"}>
-                      {s.prediction}
+                      {s.prediction === "Normal" ? (
+                        s.prediction
+                      ) : (
+                        <>
+                          <span className="sm:hidden">Abnormal</span>
+                          <span className="hidden sm:inline">{s.prediction}</span>
+                        </>
+                      )}
                     </StatusPill>
                   </TableCell>
                 </TableRow>

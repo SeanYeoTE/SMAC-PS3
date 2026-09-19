@@ -11,7 +11,7 @@ export function RcaText({
   rcaStatus?: RcaStatus;
 }) {
   return (
-    <div className="space-y-3 rounded-lg border-l-2 border-primary bg-muted/30 p-3.5 text-sm leading-relaxed">
+    <div className="space-y-3 rounded-lg border-l-2 border-primary bg-muted/30 p-3 text-sm leading-relaxed [overflow-wrap:anywhere] sm:p-3.5">
       <p>{result.detail.note}</p>
       <div>
         <h3 className="font-semibold">Root cause analysis (RCA)</h3>
