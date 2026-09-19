@@ -160,21 +160,39 @@ async def live_ingest(session_id: str, request: Request):
     return JSONResponse(_jsonable({"events": events, "state": s.state()}))
 
 
-@app.post("/api/live/sessions/{session_id}/replay")
-async def live_replay(session_id: str, files: list[UploadFile] = File(...),
-                      speed: float | None = Form(None)):
-    """Play recorded files into the session as if a sensor were sending them."""
-    s = _session(session_id)
+async def _save_upload(s: live.Session, f: UploadFile) -> str:
     accepts = predict.SUBSYSTEMS[s.subsystem]["accepts"]
-    paths = []
-    for f in files:
-        suffix = os.path.splitext(f.filename or "")[1].lower()
-        if suffix not in accepts:
-            raise HTTPException(400, f"{s.subsystem} replay expects {' or '.join(accepts)} files, "
-                                     f"got '{suffix or 'no extension'}'.")
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-            tmp.write(await f.read())
-            paths.append(tmp.name)
+    suffix = os.path.splitext(f.filename or "")[1].lower()
+    if suffix not in accepts:
+        raise HTTPException(400, f"{s.subsystem} replay expects {' or '.join(accepts)} files, "
+                                 f"got '{suffix or 'no extension'}'.")
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(await f.read())
+        return tmp.name
+
+
+@app.post("/api/live/sessions/{session_id}/files")
+async def live_upload(session_id: str, file: UploadFile = File(...)):
+    """Upload one recorded file for a replay. Send one file per request (Cloud
+    Run rejects requests over 32 MB and one Rail file is ~17.5 MB), then call
+    /replay to play everything uploaded, in upload order."""
+    s = _session(session_id)
+    s.pending.append(await _save_upload(s, file))
+    return {"pending": len(s.pending), "filename": file.filename}
+
+
+@app.post("/api/live/sessions/{session_id}/replay")
+async def live_replay(session_id: str, files: list[UploadFile] | None = File(None),
+                      speed: float | None = Form(None)):
+    """Play recorded files into the session as if a sensor were sending them:
+    the files uploaded with /files, then any attached to this request."""
+    s = _session(session_id)
+    if s._thread is not None and s._thread.is_alive():
+        raise HTTPException(409, "A replay is already running in this session; stop it first.")
+    paths = s.pending + [await _save_upload(s, f) for f in files or []]
+    s.pending = []
+    if not paths:
+        raise HTTPException(400, "Nothing to replay: upload the files first.")
     live.replay(s, paths, speed, cleanup=True)
     return {"status": "replaying", "files": len(paths),
             "speed": speed or live.DEFAULT_SPEED[s.subsystem]}

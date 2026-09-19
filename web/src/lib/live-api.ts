@@ -13,11 +13,27 @@ export async function startSession(subsystem: SubsystemKey): Promise<LiveSession
   return unwrap(res);
 }
 
-export async function replay(sessionId: string, files: File[], speed?: number): Promise<{ status: string; files: number; speed: number }> {
+/** Uploads one recorded file for a replay. Files go one per request: Cloud Run
+ * rejects any request over 32 MB and a single Rail file is ~17.5 MB. */
+export async function uploadReplayFile(sessionId: string, file: File): Promise<{ pending: number }> {
   const body = new FormData();
-  for (const file of files) body.append("files", file);
-  if (speed !== undefined) body.append("speed", String(speed));
+  body.append("file", file);
+  const res = await fetch(`/api/live/sessions/${sessionId}/files`, { method: "POST", body });
+  return unwrap(res);
+}
 
+export async function replay(
+  sessionId: string,
+  files: File[],
+  speed?: number,
+  onUploaded?: (done: number, total: number) => void,
+): Promise<{ status: string; files: number; speed: number }> {
+  for (let i = 0; i < files.length; i++) {
+    await uploadReplayFile(sessionId, files[i]);
+    onUploaded?.(i + 1, files.length);
+  }
+  const body = new FormData();
+  if (speed !== undefined) body.append("speed", String(speed));
   const res = await fetch(`/api/live/sessions/${sessionId}/replay`, { method: "POST", body });
   return unwrap(res);
 }

@@ -31,6 +31,13 @@ steps:
       - --allow-unauthenticated
       - --memory
       - 2Gi
+      # live monitoring keeps sessions in memory and replays them in a
+      # background thread: one instance, always on, CPU not throttled
+      - --min-instances
+      - "1"
+      - --max-instances
+      - "1"
+      - --no-cpu-throttling
 
 images:
   - us-central1-docker.pkg.dev/$PROJECT_ID/nebulax-containers/nebulax-api:$BUILD_ID

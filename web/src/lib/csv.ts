@@ -11,9 +11,11 @@ function toCsv(rows: (string | number)[][]): string {
   return rows.map((row) => row.map(escapeCsvField).join(",")).join("\r\n");
 }
 
-/** Matches pandas.to_csv's line endings, since this is the file a grading script parses. */
+/** Matches pandas.to_csv and the organisers' example submissions: LF line
+ * endings and a newline after the last row, since this is the file a grading
+ * script parses. */
 function toCsvLF(rows: (string | number)[][]): string {
-  return rows.map((row) => row.map(escapeCsvField).join(",")).join("\n");
+  return rows.map((row) => row.map(escapeCsvField).join(",")).join("\n") + "\n";
 }
 
 function doorCsv(result: Extract<PredictResult, { subsystem: "door" }>): string {

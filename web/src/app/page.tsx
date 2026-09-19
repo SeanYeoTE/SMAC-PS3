@@ -15,6 +15,7 @@ import { SubsystemSidebar } from "@/components/subsystem-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UploadCard } from "@/components/upload-card";
 import { BatchResults } from "@/components/batch-results";
+import { LivePanel } from "@/components/live-panel";
 import { useLiveSession } from "@/hooks/use-live-session";
 import { fetchRca, fetchSubsystems, predict } from "@/lib/api";
 import { downloadBatchSummaryCsv, downloadPredictionsCsv, downloadResultCsv } from "@/lib/csv";
@@ -64,6 +65,9 @@ export default function Home() {
   const settledCount = items?.filter((it) => it.status === "done" || it.status === "error").length ?? 0;
   const [mobileTab, setMobileTab] = useState<MobileTab>("analyze");
   const live = useLiveSession(selected);
+  const liveFailed =
+    live.status === "unavailable" || live.status === "connection lost" || live.status.startsWith("replay failed");
+  const liveUploading = live.status.startsWith("uploading");
 
   useEffect(() => {
     fetchSubsystems()
@@ -211,16 +215,16 @@ export default function Home() {
                 <Radio
                   className={cn(
                     "size-3.5",
-                    live.status === "unavailable"
+                    liveFailed
                       ? "text-red-600"
-                      : live.status === "replaying" || live.status === "receiving"
+                      : live.status === "replaying" || live.status === "receiving" || liveUploading
                         ? "animate-pulse text-emerald-600"
                         : "text-muted-foreground",
                   )}
                   aria-hidden="true"
                 />
-                <span className="eyebrow">{live.status === "unavailable" ? "LIVE SESSION UNAVAILABLE" : "PREDICTION SERVICE LINKED"}</span>
-                {live.status !== "unavailable" && <span className="text-muted-foreground">· {live.status}</span>}
+                <span className="eyebrow">{liveFailed ? "LIVE SESSION UNAVAILABLE" : "PREDICTION SERVICE LINKED"}</span>
+                {!liveFailed && <span className="text-muted-foreground">· {live.status}</span>}
               </div>
             )}
 
@@ -235,12 +239,23 @@ export default function Home() {
                   isLoading={isAnalyzing}
                 />
                 {files.length > 0 && (
-                  <Button variant="outline" onClick={() => live.start(files)}>
+                  <Button variant="outline" onClick={() => live.start(files)} disabled={liveUploading}>
                     <Radio aria-hidden="true" data-icon="inline-start" />
                     Start Live Session
                   </Button>
                 )}
               </>
+            )}
+
+            {selected && live.status !== "idle" && (
+              <LivePanel
+                subsystem={selected}
+                status={live.status}
+                error={live.error}
+                state={live.state}
+                events={live.events}
+                onStop={live.stop}
+              />
             )}
 
             {items && (
