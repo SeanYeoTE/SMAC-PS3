@@ -56,6 +56,36 @@ def test_rail_replay_matches_batch():
     assert [e["values"]["prediction"] for e in ev] == [rail.predict(f)["prediction"] for f in files]
 
 
+def test_replay_files_uploaded_one_per_request():
+    """Cloud Run rejects any request over 32 MB and one Rail file is ~17.5 MB, so
+    the page uploads each file in its own request, then starts the replay."""
+    files = [f"{DATA}/Rail_Corrugation/Test/Test9.csv", f"{DATA}/Rail_Corrugation/Test/Test1.csv"]
+    sid = client.post("/api/live/rail/sessions").json()["session_id"]
+    for i, f in enumerate(files, 1):
+        r = client.post(f"/api/live/sessions/{sid}/files",
+                        files={"file": (os.path.basename(f), open(f, "rb"), "text/csv")})
+        assert r.status_code == 200, r.text
+        assert r.json()["pending"] == i
+    r = client.post(f"/api/live/sessions/{sid}/replay", data={"speed": "1000"})
+    assert r.status_code == 200, r.text
+    assert r.json()["files"] == 2
+    assert _wait(sid)["windows"] == 2
+    ev = client.get(f"/api/live/sessions/{sid}/events", params={"after": 0}).json()["events"]
+    assert [e["values"]["prediction"] for e in ev] == [rail.predict(f)["prediction"] for f in files]
+
+
+def test_replay_needs_files_and_runs_once_at_a_time():
+    f = f"{DATA}/Door/Test.csv"
+    sid = client.post("/api/live/door/sessions").json()["session_id"]
+    assert client.post(f"/api/live/sessions/{sid}/replay", data={"speed": "1"}).status_code == 400
+    bad = {"file": ("x.xlsx", b"nope", "application/octet-stream")}
+    assert client.post(f"/api/live/sessions/{sid}/files", files=bad).status_code == 400
+    up = lambda: [("files", ("Test.csv", open(f, "rb"), "text/csv"))]
+    assert client.post(f"/api/live/sessions/{sid}/replay", files=up(), data={"speed": "1"}).status_code == 200
+    assert client.post(f"/api/live/sessions/{sid}/replay", files=up(), data={"speed": "1"}).status_code == 409
+    assert client.post(f"/api/live/sessions/{sid}/stop").json()["status"] == "stopped"
+
+
 def test_shm_json_values_and_segment_close():
     from ps3 import shm
     x = shm.load_series(f"{DATA}/SHM/Test/test02.csv")

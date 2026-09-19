@@ -314,6 +314,7 @@ class Session:
         self.events, self._seq = [], itertools.count(1)
         self.lock = threading.Lock()
         self.status = "waiting for data"
+        self.pending = []           # uploaded files waiting for a replay (temp paths)
         self._stop = threading.Event()
         self._thread = None
 
@@ -363,6 +364,11 @@ def get_session(session_id: str) -> Session:
 def delete_session(session_id: str) -> None:
     s = SESSIONS.pop(session_id)
     s.stop()
+    for p in s.pending:
+        try:
+            os.unlink(p)
+        except OSError:
+            pass
 
 
 # ---------------------------------------------------------------- input parsing
