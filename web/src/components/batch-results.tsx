@@ -235,7 +235,7 @@ export function BatchResults({ items }: { items: BatchItem[] }) {
                 </div>
               )}
               {expanded.has(i) && item.status === "done" && (
-                <div className="border-t border-border p-3">
+                <div className="border-t border-border p-2 sm:p-3">
                   <ResultView result={item.result} rca={item.rca} rcaStatus={item.rcaStatus} />
                 </div>
               )}

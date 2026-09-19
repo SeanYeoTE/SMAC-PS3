@@ -22,7 +22,7 @@ export function StatTile({
       <p className="eyebrow truncate">{label}</p>
       <p
         className={cn(
-          "mt-1 truncate text-2xl font-semibold tabular-nums",
+          "mt-1 text-xl font-semibold tabular-nums [overflow-wrap:anywhere] sm:truncate sm:text-2xl",
           tone === "accent" && "text-primary",
           tone === "bad" && "text-red-600",
         )}

@@ -50,14 +50,14 @@ export function ShmResult({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="grid gap-3 lg:grid-cols-[1fr_320px]">
-      <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="flex min-w-0 flex-col gap-3">
       <Card>
         <CardContent className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-3">
             <Gauge className="size-8 shrink-0 text-primary" aria-hidden="true" />
-            <div>
-              <p className="text-2xl font-semibold">
+            <div className="min-w-0">
+              <p className="text-xl font-semibold sm:text-2xl">
                 <span className="tabular-nums">{pct.toFixed(1)}%</span> of fatigue life used
               </p>
               <p className="eyebrow mt-0.5">Structural Health Monitoring · Cumulative Damage</p>
