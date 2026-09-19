@@ -12,11 +12,11 @@ explanation that the app can show on screen.
 | Subsystem | Task | How it works | CV score | Checked with |
 |---|---|---|---|---|
 | **Door** | Find each open/close cycle, label it Normal or Abnormal resistance | Time-gap segmentation + motor current relative to the file's own baseline | **0.996** (110/110 on the full stream) | 5-fold × 5 seeds, 110 cycles |
-| **SHM** | Estimate cumulative fatigue damage | Ridge regression on rainflow damage sums + signal statistics | **0.977** (MAPE 2.31%) | leave-one-out, 64 files |
+| **SHM** | Estimate cumulative fatigue damage | Ridge regression on rainflow damage sums, counted the way the labels were made | **0.995** (MAPE 0.54%) | leave-one-out, 64 files |
 | **ACV** | Rank the 8 cars by refrigerant-leak likelihood | Logistic regression on 4 cabin-temperature features, each relative to the other cars | **0.979** (true car 1st in 5 of 6 cases, 2nd in 1) | leave-one-case-out, 6 cases |
 | **Rail** | Normal / Side I / Side II corrugation | 73 vibration features + soft-vote ensemble | **0.84 ± 0.02** macro F1 (nested: 0.83) | 5-fold × 20 seeds, 272 files |
 
-If these estimates hold, the Overall Score is roughly **0.93–0.95**. ACV (a single
+If these estimates hold, the Overall Score is roughly **0.94–0.96**. ACV (a single
 test file) and Rail (only a handful of Side I files in the test set) are the two
 that can move it.
 
@@ -121,57 +121,65 @@ cycles are abnormal; beyond that the 40th percentile lands among the abnormal cy
 Train has 27% abnormal cycles and the test predictions 17–25%. On the test file the
 ratios closest to the threshold are 1.072 and 1.204, so no cycle is borderline.
 
-### SHM: machine learning on rainflow physics
+### SHM: machine learning on the organisers' rainflow counting
 
 The Info Kit asks for a regression model that predicts one damage value per file. It
 says the labels were made with rainflow counting and Miner's rule, but that teams
-don't have to use that method. The model uses that physics as its inputs and learns
-the rest from the 64 labelled files:
+don't have to use that method. How the rainflow counting is done turns out to matter
+more than the model:
 
-1. **Rainflow counting** of the stress series. Amplitude = range ÷ 2, and half cycles
-   count 0.5.
-2. **Features (30):**
-   - 9 rainflow damage sums, log(Σ count × amplitude^m) for m = 3.0, 3.5, …, 7.0, so
-     the model learns how much each amplitude level matters instead of fixing it;
-   - 21 signal statistics: mean, spread, skew, kurtosis, range, 7 percentiles, 2
-     step-size measures, turning-point rate and 6 spectral band shares.
+- Exact rainflow counting (the `rainflow` package, leftover half cycles counted as
+  0.5) with a fitted Miner's rule misses the labels by 2.6% on average.
+- The `fatpack` library's rainflow counting with its default settings misses them by
+  only 0.79%. It first sorts the signal into 64 stress levels, and it closes the
+  leftover half cycles by repeating them, so every cycle counts as a full cycle.
+- 64 levels is a sharp optimum: 63 or 65 levels give 1.08%, 128 gives 1.13%. So the
+  labels were almost certainly made this way, and the model uses the same counting.
+
+1. **Rainflow counting** with `fatpack.find_rainflow_ranges(x, k=64)`. Amplitude =
+   range ÷ 2.
+2. **Features (9):** log(Σ amplitude^m) over all cycles, for m = 3.0, 3.5, …, 7.0, so
+   the model learns how much each amplitude level matters instead of fixing it.
 3. **Model:** ridge regression on log damage, with standardised features. The
    regularisation strength is chosen by cross-validation inside each training fold.
-4. **Cross-check:** Miner's rule itself, `damage = Σ count × amplitude^m / C` with
-   fitted m = 5.03 and C = 7.98 × 10⁸ (`params_shm.json`), is computed for every file
-   and shown in `detail` next to the model's answer, along with which amplitude bands
-   drive the damage.
+4. **Cross-check:** Miner's rule itself, `damage = Σ amplitude^m / C` with fitted
+   m = 4.99 and C = 7.45 × 10⁸ (`params_shm.json`), is computed for every file and
+   shown in `detail` next to the model's answer, along with which amplitude bands
+   drive the damage. On the 16 test files the two agree within 1.1%.
 
 ![SHM: every training file predicted by a model that never saw it](charts/shm_loo_pred_vs_true.png)
 
 | SHM model | Leave-one-out MAPE | Score |
 |---|---|---|
-| ML on signal statistics only: gradient boosting / random forest | 19.0% / 20.4% | 0.81 / 0.80 |
+| **Ridge regression on fatpack damage sums (used)** | **0.54%** | **0.995** |
+| Ridge regression on fatpack damage sums + 21 signal statistics | 0.96% | 0.990 |
+| Miner's-rule formula on fatpack cycles, m and C fitted | 0.81% | 0.992 |
+| Previous model: ridge regression on exact-rainflow damage sums + 21 signal statistics | 2.31% | 0.977 |
+| Miner's-rule formula on exact rainflow cycles, m and C fitted | 2.76% | 0.972 |
+| ML on exact-rainflow damage features: gradient boosting / random forest | 8.9% / 5.0% | 0.91 / 0.95 |
 | ML on signal statistics only: ridge regression | 10.1% | 0.90 |
-| ML on rainflow damage features: gradient boosting / random forest | 8.9% / 5.0% | 0.91 / 0.95 |
-| ML on rainflow damage features: ridge regression | 2.56% | 0.974 |
-| **ML on both: ridge regression (used)** | **2.31%** | **0.977** |
-| Miner's-rule formula, m and C fitted | 2.76% | 0.972 |
+| ML on signal statistics only: gradient boosting / random forest | 19.0% / 20.4% | 0.81 / 0.80 |
 
-The model was picked from these ML configurations, so it was confirmed on 20 repeated
-8-fold splits: 2.37% against 2.72% for the formula, better on all 20, and the worst
-single-file error drops from 13.4% to 6.9%. Tree models do poorly here because 64
-files are too few for them to learn a smooth power law, while ridge regression on log
-damage sums can represent one almost exactly. Signal statistics alone are not enough:
-the standard deviation only reaches R² 0.56 against the labels, while the rainflow
-damage sum reaches 0.9989.
+Confirmed on 20 repeated 5-fold splits: 0.56% ± 0.03% against 2.45% ± 0.19% for the
+previous model, better on all 20. The typical file is now within 0.3% and 59 of the
+64 within 1%; the largest errors are train13 (6.1%) and train41 (4.6%), which no
+variant explains. The signal
+statistics that helped the previous model now only add noise, so they are dropped.
+On the test files the new predictions differ from the previous ones by 3% on average
+(11% for test03).
 
-Before moving to the model, these formula variants were tested; none beat the
-formula's 2.76%:
+Other variants tested; none came close to the fatpack counting:
 
 | Variant | Result |
 |---|---|
-| Range binning (15 `nbins`, 11 `binsize` settings, bin centres, rounding) | 2.56–2.61% in-sample, no real gain |
-| Half cycles counted as full, or dropped | worse |
-| Two-slope S-N curve (knee and both slopes fitted) | 2.81% leave-one-out |
-| Goodman / Gerber mean-stress correction | 3.20% / 2.62% in-sample |
+| Range binning (15 `nbins`, 11 `binsize` settings, bin centres, rounding) | 2.56–2.61% in-sample |
+| Half cycles counted as full, or dropped | 5.2% / 15.5% |
+| Small cycles ignored (amplitude below 0.5–8) | no gain |
+| Two-slope or three-slope S-N curve (fatpack `BiLinear`/`TriLinear`, knee fitted) | no gain; best is a single slope m ≈ 5 |
+| Goodman / Gerber / SWT mean-stress correction | 3.20% / 2.62% / 45.6% in-sample |
+| Other fatpack versions (0.5.5–0.7.8) | identical results |
 
-The model runs in about 0.5 s per file (581,120 samples), so it also meets the Info
+The model runs in about 0.36 s per file (581,120 samples), so it also meets the Info
 Kit's call for automated, efficient assessment.
 
 ### ACV: trained ranker on cabin temperature relative to the other cars
@@ -319,7 +327,7 @@ On the test data: Door is high (worst cycle +37.9%). ACV is medium: the model gi
 car 01 88% and physics agrees, but car 01's excess (0.099 °C) is weaker than any
 training leak.
 Rail Test9 is medium (predicted Normal, 35% corrugation; its Side II loudest axle box is
-above 98% of speed-matched Normal files). SHM test02 is medium (D = 0.81, 19% capacity
+above 98% of speed-matched Normal files). SHM test02 is medium (D = 0.82, 18% capacity
 left).
 
 ## Validation
@@ -366,7 +374,7 @@ this, so it is stated here rather than ignored.
 
 | Model | Score on its own training data | Score on held-out data | Verdict |
 |---|---|---|---|
-| SHM (ridge regression) | 1.57% error | 2.31% error | small gap, no overfitting |
+| SHM (ridge regression) | 0.45% error | 0.54% error | small gap, no overfitting |
 | Door (1 threshold) | 100% | 99.6% | no overfitting |
 | Rail (ensemble) | 0.99 | **0.84** | fits the training data almost perfectly; 0.84 is the honest figure |
 
@@ -391,8 +399,9 @@ with about 11 Side I files per fold.
   are available at prediction time.
 - Selection effects are stated where they exist: ACV variants were compared on its
   6 cases, the Rail ensemble was picked from ~15 configurations
-  (the nested check above measures how much that matters), and the SHM model from 7
-  (confirmed on 20 repeated splits).
+  (the nested check above measures how much that matters), and the SHM counting
+  method from a handful of variants (64 levels is fatpack's default and a sharp
+  optimum; the model was confirmed on 20 repeated splits).
 - Rail has a speed confound: in training, faults only occur above 35 km/h. A slow
   corrugated section in real service would likely be called Normal.
 
@@ -473,7 +482,7 @@ Measured on one CPU core:
 | Door | 0.03 s for the whole test stream | — |
 | ACV | 0.3–0.8 s per file (12 s for the 22,000-row case 04), about 9× faster than without `python-calamine` | reading the Excel file; the features and ranking take about 30 ms |
 | Rail | 0.28 s per 1-second recording | reading the CSV 150 ms, frequency analysis and features 121 ms, the three models 7 ms |
-| SHM | 0.6 s per file | rainflow counting and features; the model itself is instant |
+| SHM | 0.36 s per file | reading the CSV and rainflow counting; the model itself is instant |
 
 Rail processes one second of recording in about a quarter of a second, so real-time use
 is not limited by the models. In a live system the data would arrive straight from the
@@ -511,9 +520,9 @@ python fit_rail.py <Rail_Corrugation/Train dir> <Rail_Corrugation/Train_Labels.c
 python fit_acv.py  <ACV dir, holding Train/ and Train_Labels.csv>
 ```
 
-`fit_shm.py` fits the ridge model (`ps3/model_shm.joblib`) and the Miner's-rule
-constants used as a cross-check (`ps3/params_shm.json`), and prints the leave-one-out
-MAPE for both. `fit_rail.py` takes a few minutes for 272 files and caches features to
+`fit_shm.py` takes about 20 s. It fits the ridge model (`ps3/model_shm.joblib`) and the
+Miner's-rule constants used as a cross-check (`ps3/params_shm.json`), and prints the
+formula's in-sample MAPE and the model's leave-one-out MAPE. `fit_rail.py` takes a few minutes for 272 files and caches features to
 `rail_feats_v2.pkl`. It prints the cross-validated macro F1 and saves
 `ps3/model_rail.joblib`. `fit_acv.py` takes about 15 s with `python-calamine`, prints leave-one-case-out rank
 decay for the ranker and for the physics score, and saves `ps3/model_acv.joblib`. Each

@@ -1,16 +1,19 @@
 """SHM: cumulative fatigue damage from a dynamic stress time series.
 
-Model: ridge regression on log damage, trained on the 64 labelled files.
-Features (30), computed per file:
-  - 9 rainflow damage sums  log( sum_i n_i * amp_i^m )  for m = 3.0, 3.5 ... 7.0,
-    so the model learns the S-N weighting from the data instead of it being fixed;
-  - 21 signal statistics (mean, spread, shape, range, percentiles, step size,
-    turning-point rate, spectral band shares).
+The Info Kit says the reference labels were computed with rainflow counting and
+Miner's rule. How the rainflow counting is done matters: the labels are matched
+best by fatpack's rainflow counting with its default 64 load classes, the
+residue closed by repeating it (full cycles). The 2-parameter Miner formula
+D = sum(amp^m) / C fitted on those cycles misses the labels by 0.79% on average,
+against 2.6% on exact rainflow cycles with half-counted residue; 63 or 65 load
+classes give 1.08%, so 64 is a sharp optimum.
 
-Leave-one-out MAPE across all 64 files: 2.31% (score 0.977), against 2.76% for
-the fitted Miner's-rule formula D = sum(n * amp^m) / C (m = 5.03, C = 7.98e8)
-and 10-20% for machine learning on the signal statistics alone. The formula is
-still computed for every file and shown in `detail` as a cross-check.
+Model: ridge regression on log damage, trained on the 64 labelled files, on 9
+features log( sum_i amp_i^m ) for m = 3.0, 3.5 ... 7.0 over those cycles.
+Repeated 5-fold CV MAPE 0.56% (20 seeds; leave-one-out 0.54%, score about
+0.995), against 2.45% for the previous model (rainflow-package cycles plus 21
+signal statistics). The fitted Miner formula is still computed for every file
+and shown in `detail` as a cross-check.
 """
 import json
 import os
@@ -48,41 +51,30 @@ def load_series(path: str) -> np.ndarray:
     return s[np.isfinite(s)]
 
 
+LOAD_CLASSES = 64          # fatpack's default; reproduces the labels best (see above)
+
+
 def cycles(x: np.ndarray) -> np.ndarray:
-    """Rainflow cycle extraction -> array of (amplitude, count)."""
-    import rainflow
-    return np.array([[rng / 2.0, cnt] for rng, mean, cnt, i, j
-                     in rainflow.extract_cycles(x)])
+    """Rainflow cycles -> array of (amplitude, count), one row per distinct
+    amplitude. fatpack sorts the signal into 64 load classes and closes the
+    residue by repeating it, so every cycle is a full cycle."""
+    import fatpack
+    rng = fatpack.find_rainflow_ranges(x, k=LOAD_CLASSES)
+    amp, cnt = np.unique(rng[rng > 0] / 2.0, return_counts=True)
+    return np.stack([amp, cnt.astype(float)], 1)
 
 
 def damage_sum(c: np.ndarray, m: float) -> float:
     return float(np.sum(c[:, 0] ** m * c[:, 1]))
 
 
-def features(x: np.ndarray, c: np.ndarray) -> pd.Series:
-    """The 30 model inputs for one stress series and its rainflow cycles."""
-    from scipy import signal, stats
-    out = {f"rf_logdmg_m{m:.1f}": np.log(damage_sum(c, m)) for m in DAMAGE_EXPONENTS}
-    d = np.diff(x)
-    z = x - x.mean()
-    q = np.percentile(x, [1, 5, 25, 50, 75, 95, 99])
-    fr, psd = signal.welch(z, nperseg=4096)
-    edges = np.quantile(np.arange(len(fr)), [0, .02, .05, .1, .2, .4, 1]).astype(int)
-    out.update({
-        "st_log_std": np.log(x.std()), "st_mean": x.mean(), "st_skew": stats.skew(x),
-        "st_kurt": stats.kurtosis(x), "st_log_range": np.log(x.max() - x.min()),
-        **{f"st_p{p:02d}": v for p, v in zip((1, 5, 25, 50, 75, 95, 99), q)},
-        "st_log_absdiff": np.log(np.abs(d).mean()), "st_log_diffstd": np.log(d.std()),
-        "st_turning_rate": np.sum(np.diff(np.sign(d)) != 0) / len(x),
-        **{f"st_band{i}": np.log(psd[a:b].sum() / psd.sum() + 1e-12)
-           for i, (a, b) in enumerate(zip(edges[:-1], edges[1:]))},
-    })
-    return pd.Series(out)
+def features(c: np.ndarray) -> pd.Series:
+    """The 9 model inputs: log damage sums over the rainflow cycles."""
+    return pd.Series({f"rf_logdmg_m{m:.1f}": np.log(damage_sum(c, m)) for m in DAMAGE_EXPONENTS})
 
 
 def featurize(path: str) -> pd.Series:
-    x = load_series(path)
-    return features(x, cycles(x))
+    return features(cycles(load_series(path)))
 
 
 def make_model():
@@ -99,7 +91,7 @@ def predict(path: str) -> dict:
     x = load_series(path)
     c = cycles(x)
     M = _model()
-    X = features(x, c).reindex(M["features"]).to_frame().T
+    X = features(c).reindex(M["features"]).to_frame().T
     D = float(np.exp(M["model"].predict(X)[0]))
     D_formula = damage_sum(c, p["m"]) / p["C"]
 
@@ -120,7 +112,7 @@ def predict(path: str) -> dict:
     return {
         "prediction": round(D, 6),
         "detail": {
-            "model": "ridge regression on rainflow damage sums + signal statistics",
+            "model": "ridge regression on rainflow damage sums (fatpack, 64 load classes)",
             "miners_rule_estimate": round(float(D_formula), 6),
             "model_vs_formula_pct": round(100 * (D / D_formula - 1), 2),
             "samples": int(len(x)),
