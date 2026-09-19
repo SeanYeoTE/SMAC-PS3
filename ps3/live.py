@@ -25,6 +25,7 @@ import json
 import os
 import threading
 import uuid
+from copy import deepcopy
 from collections import deque
 
 import numpy as np
@@ -391,6 +392,133 @@ def _read(subsystem: str, path: str):
     if subsystem == "shm":
         return shm.load_series(path)
     return pd.read_csv(path)
+
+
+def _read_simulation_file(subsystem: str, path: str):
+    """Read a recording for the interactive timeline.
+
+    Recorded sensor exports are normally CSV (ACV is normally Excel), but the
+    simulator deliberately accepts an Excel workbook for every subsystem so a
+    user can replay the same tabular data directly from a workbook.
+    """
+    suffix = os.path.splitext(path)[1].lower()
+    if suffix in (".xlsx", ".xls"):
+        if subsystem == "shm":
+            frame = pd.read_excel(path, header=None)
+            values = pd.to_numeric(frame.iloc[:, 0], errors="coerce").to_numpy(float)
+            return values[np.isfinite(values)]
+        frame = acv.read(path) if subsystem == "acv" else pd.read_excel(path)
+        return frame
+    return _read(subsystem, path)
+
+
+def _simulation_readings(subsystem: str, chunk, monitor) -> dict:
+    """Small, JSON-friendly sensor summary for the timeline's current point."""
+    if subsystem == "door":
+        current = pd.to_numeric(chunk[door.CURRENT], errors="coerce")
+        closing = pd.to_numeric(chunk[door.CLOSING], errors="coerce").fillna(0)
+        return {
+            "Current mean": round(float(current.mean()), 1),
+            "Current peak": round(float(current.max()), 1),
+            "Operation": "Closing" if closing.max() >= 1 else "Opening",
+        }
+    if subsystem == "acv":
+        indoor = acv._num(acv._wide(chunk, "Indoor Average Temperature"))
+        readings = {"Rows received": monitor.n}
+        if indoor is not None:
+            means = indoor.mean().sort_values(ascending=False)
+            for car, value in means.head(4).items():
+                if np.isfinite(value):
+                    readings[f"Car {car} cabin"] = round(float(value), 2)
+        return readings
+    if subsystem == "rail":
+        groups = rail._channel_groups(chunk.columns)
+        values = chunk.apply(pd.to_numeric, errors="coerce").to_numpy(float)
+        readings = {"Samples": len(chunk)}
+        for label, key in (("Side I RMS", "I"), ("Side II RMS", "II")):
+            cols = groups[key]
+            if cols:
+                readings[label] = round(float(np.sqrt(np.nanmean(values[:, cols] ** 2))), 5)
+        readings["Speed"] = round(rail.speed_kmh(values[:, 0]), 1)
+        return readings
+    values = np.asarray(chunk, dtype=np.float64)
+    return {
+        "Stress mean": round(float(np.mean(values)), 3),
+        "Stress RMS": round(float(np.sqrt(np.mean(values ** 2))), 3),
+        "Stress range": round(float(np.max(values) - np.min(values)), 3),
+        "Samples received": monitor.closed and len(monitor.segments) * monitor.segment_samples + monitor.n_buf
+        or monitor.n_buf,
+    }
+
+
+def simulate_file(subsystem: str, path: str, max_points: int = 500) -> dict:
+    """Run a recording synchronously and return scrub-able timeline snapshots.
+
+    This uses the same monitors as real sensor ingestion. It does not create a
+    server-side session or sleep, so dragging the resulting timeline is instant.
+    """
+    key = subsystem.strip().lower()
+    if key not in MONITORS:
+        raise ValueError(f"unknown subsystem {subsystem!r}")
+    data = _read_simulation_file(key, path)
+    monitor = MONITORS[key]()
+    points = []
+    for index, (chunk, _) in enumerate(_chunks(key, data, DEFAULT_SPEED[key])):
+        events = monitor.feed(chunk)
+        label = next((str(e.get("time")) for e in reversed(events) if e.get("time")), None)
+        if label is None:
+            label = f"Point {index + 1}"
+        readings = _simulation_readings(key, chunk, monitor)
+        # A door cycle is classified when the following cycle begins. Show the
+        # just-classified cycle's readings rather than the first samples of the
+        # next cycle so the scrubber and warning always describe the same time.
+        if key == "door" and events:
+            values = events[-1].get("values", {})
+            if "cur_mean" in values:
+                readings["Current mean"] = values["cur_mean"]
+                readings["Operation"] = values.get("operation", readings.get("Operation"))
+                if "ratio" in values:
+                    readings["Baseline ratio"] = values["ratio"]
+        points.append({
+            "index": index,
+            "label": label,
+            "readings": readings,
+            "events": deepcopy(events),
+            "state": deepcopy(monitor.state()),
+        })
+
+    final_events = monitor.finish()
+    if final_events:
+        if points:
+            points[-1]["events"].extend(deepcopy(final_events))
+            points[-1]["state"] = deepcopy(monitor.state())
+        else:
+            points.append({"index": 0, "label": "End of recording", "readings": {},
+                           "events": deepcopy(final_events), "state": deepcopy(monitor.state())})
+    if not points:
+        raise ValueError("the recording contains no usable sensor samples")
+
+    # Keep playback responsive for unusually long recordings, while always
+    # retaining alert points and the beginning/end of the recording.
+    original_count = len(points)
+    if original_count > max_points:
+        keep = set(np.linspace(0, len(points) - 1, max_points, dtype=int).tolist())
+        keep.update(i for i, point in enumerate(points)
+                    if any(event["kind"] == "alert" for event in point["events"]))
+        points = [point for i, point in enumerate(points) if i in keep]
+    for index, point in enumerate(points):
+        source_index = point["index"]
+        point["index"] = index
+        point["progress"] = round(source_index / max(1, original_count - 1), 4)
+    return {
+        "subsystem": key,
+        "points": points,
+        "summary": {
+            "points": len(points),
+            "alerts": sum(any(e["kind"] == "alert" for e in p["events"]) for p in points),
+            "final_state": deepcopy(monitor.state()),
+        },
+    }
 
 
 def _chunks(subsystem: str, data, speed: float):

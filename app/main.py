@@ -105,6 +105,29 @@ async def run_rca(subsystem: str, result: dict = Body(...)):
     return JSONResponse(rca_result)
 
 
+@app.post("/api/simulate/{subsystem}")
+async def simulate_recording(subsystem: str, file: UploadFile = File(...)):
+    """Turn an uploaded recording into an instant, scrub-able sensor timeline."""
+    key = subsystem.strip().lower()
+    if key not in predict.SUBSYSTEMS:
+        raise HTTPException(404, f"unknown subsystem '{subsystem}'")
+    suffix = os.path.splitext(file.filename or "")[1].lower()
+    accepted = set(predict.SUBSYSTEMS[key]["accepts"]) | {".xlsx", ".xls"}
+    if suffix not in accepted:
+        raise HTTPException(400, f"Sensor playback expects {', '.join(sorted(accepted))}; got '{suffix or 'no extension'}'.")
+
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(await file.read())
+        tmp_path = tmp.name
+    try:
+        simulation = await asyncio.to_thread(live.simulate_file, key, tmp_path)
+    except Exception as exc:
+        raise HTTPException(422, f"Couldn't simulate this recording as {predict.SUBSYSTEMS[key]['label']} data: {exc}")
+    finally:
+        os.unlink(tmp_path)
+    return JSONResponse(_jsonable(simulation))
+
+
 
 # ---------------------------------------------------------------- live monitoring
 # A sensor gateway (or the replay below) sends chunks of data to a session; each

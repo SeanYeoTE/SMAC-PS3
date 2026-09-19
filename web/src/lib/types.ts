@@ -95,6 +95,34 @@ export interface Rca {
 
 export type RcaStatus = "pending" | "done" | "error";
 
+export interface SimulationEvent {
+  kind: "update" | "alert";
+  time: string | null;
+  priority: "low" | "medium" | "high" | null;
+  title: string;
+  message: string;
+  values: Record<string, unknown>;
+}
+
+export interface SimulationPoint {
+  index: number;
+  progress: number;
+  label: string;
+  readings: Record<string, string | number>;
+  events: SimulationEvent[];
+  state: Record<string, unknown>;
+}
+
+export interface SimulationResult {
+  subsystem: SubsystemKey;
+  points: SimulationPoint[];
+  summary: {
+    points: number;
+    alerts: number;
+    final_state: Record<string, unknown>;
+  };
+}
+
 /** One file's outcome in a (possibly multi-file) analysis batch. */
 export type BatchItem =
   | { file: File; status: "pending" }

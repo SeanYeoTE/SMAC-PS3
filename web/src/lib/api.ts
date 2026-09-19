@@ -1,4 +1,4 @@
-import { ApiError, type PredictResult, type Rca, type SubsystemKey, type SubsystemsResponse } from "@/lib/types";
+import { ApiError, type PredictResult, type Rca, type SimulationResult, type SubsystemKey, type SubsystemsResponse } from "@/lib/types";
 
 export async function fetchSubsystems(): Promise<SubsystemsResponse> {
   const res = await fetch("/api/subsystems");
@@ -24,6 +24,17 @@ export async function predict(subsystem: SubsystemKey, file: File): Promise<Pred
   body.append("file", file);
 
   const res = await fetch(`/api/predict/${subsystem}`, { method: "POST", body });
+  if (!res.ok) {
+    const payload = await res.json().catch(() => null);
+    throw new ApiError(payload?.detail ?? `The server returned an error (${res.status}).`);
+  }
+  return res.json();
+}
+
+export async function simulateRecording(subsystem: SubsystemKey, file: File): Promise<SimulationResult> {
+  const body = new FormData();
+  body.append("file", file);
+  const res = await fetch(`/api/simulate/${subsystem}`, { method: "POST", body });
   if (!res.ok) {
     const payload = await res.json().catch(() => null);
     throw new ApiError(payload?.detail ?? `The server returned an error (${res.status}).`);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Download, Loader2, TrainFront } from "lucide-react";
+import { Activity, Download, FileSearch, Loader2, TrainFront } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
@@ -12,6 +12,7 @@ import { StatusPill } from "@/components/status-pill";
 import { SubsystemSidebar } from "@/components/subsystem-sidebar";
 import { UploadCard } from "@/components/upload-card";
 import { BatchResults } from "@/components/batch-results";
+import { SensorPlayback } from "@/components/sensor-playback";
 import { fetchRca, fetchSubsystems, predict } from "@/lib/api";
 import { downloadBatchSummaryCsv, downloadPredictionsCsv, downloadResultCsv } from "@/lib/csv";
 import { countFlagged, summarizeResult } from "@/lib/summary";
@@ -51,6 +52,7 @@ export default function Home() {
   const [selected, setSelected] = useState<SubsystemKey | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [items, setItems] = useState<BatchItem[] | null>(null);
+  const [mode, setMode] = useState<"analysis" | "playback">("analysis");
   const resultSummary = useMemo(() => lastResultSummary(items), [items]);
   const isAnalyzing = items?.some((it) => it.status === "pending" || it.status === "processing") ?? false;
   const settledCount = items?.filter((it) => it.status === "done" || it.status === "error").length ?? 0;
@@ -65,6 +67,7 @@ export default function Home() {
     setSelected(key);
     setFiles([]);
     setItems(null);
+    setMode("analysis");
   }
 
   function fireRca(i: number, subsystem: SubsystemKey, result: PredictResult) {
@@ -168,14 +171,28 @@ export default function Home() {
           )}
 
           {subsystems && selected && !items && (
-            <UploadCard
-              subsystem={selected}
-              meta={subsystems[selected]}
-              files={files}
-              onFilesChange={setFiles}
-              onAnalyze={handleAnalyze}
-              isLoading={isAnalyzing}
-            />
+            <>
+              <div className="flex w-fit items-center gap-1 rounded-lg border bg-card p-1" role="group" aria-label="Choose workflow">
+                <Button size="sm" variant={mode === "analysis" ? "secondary" : "ghost"} onClick={() => setMode("analysis")}>
+                  <FileSearch />File analysis
+                </Button>
+                <Button size="sm" variant={mode === "playback" ? "secondary" : "ghost"} onClick={() => setMode("playback")}>
+                  <Activity />Sensor playback
+                </Button>
+              </div>
+              {mode === "analysis" ? (
+                <UploadCard
+                  subsystem={selected}
+                  meta={subsystems[selected]}
+                  files={files}
+                  onFilesChange={setFiles}
+                  onAnalyze={handleAnalyze}
+                  isLoading={isAnalyzing}
+                />
+              ) : (
+                <SensorPlayback subsystem={selected} meta={subsystems[selected]} />
+              )}
+            </>
           )}
 
           {items && (
