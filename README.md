@@ -393,9 +393,42 @@ were fitting noise, and they doubled the spread. The models already weight featu
 themselves: logistic regression learns a weight per feature, the SVM works on
 standardised features, and gradient boosting chooses splits by usefulness.
 
-**Conclusion:** feature sets, model types, ensembles, feature selection and weighting
-were all tested under the same validation, and the equal-weight ensemble on all 73
-features remains the best Rail model.
+### A top-15 screen before the full model?
+
+The idea: run a cheap model on the top 15 features first, and run the full model only
+when the screen flags a possible fault (5 seeds):
+
+| Setup | Macro F1 | Faults caught | Files sent to full model |
+|---|---|---|---|
+| Full model only | 0.846 | 81% | 100% |
+| Top-15 model only (mutual information) | 0.833 | 86% | — |
+| Screen, then full model if fault chance ≥ 10% | 0.846 | 81% | 41% |
+| Screen, then full model if fault chance ≥ 30% | 0.842 | 81% | 21% |
+
+The top-15 model alone catches slightly more faults but raises more false alarms and
+mixes up the sides more often, so its macro F1 is lower. The screen keeps the full
+model's accuracy but saves almost no time: both stages need the file read and most of
+the frequency analysis, and the models themselves take only 7 ms (see Speed below).
+
+**Conclusion:** feature sets, model types, ensembles, feature selection, weighting and
+a two-stage screen were all tested under the same validation, and the equal-weight
+ensemble on all 73 features remains the best Rail model.
+
+## Speed
+
+Measured on one CPU core:
+
+| Subsystem | Time | Where the time goes |
+|---|---|---|
+| Door | 0.03 s for the whole test stream | — |
+| ACV | about 6 s per file | reading the Excel file; the ranking itself takes 13 ms |
+| Rail | 0.28 s per 1-second recording | reading the CSV 150 ms, frequency analysis and features 121 ms, the three models 7 ms |
+| SHM | 0.6 s per file | rainflow counting and features; the model itself is instant |
+
+Rail processes one second of recording in about a quarter of a second, so real-time use
+is not limited by the models. In a live system the data would arrive straight from the
+sensors, removing the file-reading step, which is the largest single cost for Rail and
+almost all of the cost for ACV.
 
 ## Suggested improvements
 
@@ -418,6 +451,10 @@ features remains the best Rail model.
 7. **SHM: report remaining life.** Showing 1 − damage, or how many similar segments
    the component can take before damage reaches 1, would make the output more useful
    for maintenance planning.
+8. **App: read ACV Excel files faster.** Almost all of ACV's 6 seconds is spent reading
+   the Excel file. pandas' `calamine` engine (`pd.read_excel(..., engine="calamine")`,
+   needs the `python-calamine` package) read the test file in 0.67 s instead of 5.9 s,
+   with the same ranking.
 
 ## Retraining
 
