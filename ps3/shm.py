@@ -21,6 +21,8 @@ import os
 import numpy as np
 import pandas as pd
 
+from .urgency import urgency
+
 PARAMS_PATH = os.path.join(os.path.dirname(__file__), "params_shm.json")
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "model_shm.joblib")
 DAMAGE_EXPONENTS = np.arange(3.0, 7.01, 0.5)
@@ -86,9 +88,10 @@ def make_model():
     return make_pipeline(StandardScaler(), RidgeCV(alphas=np.logspace(-4, 2, 13)))
 
 
-def predict(path: str) -> dict:
+def predict(path) -> dict:
+    """path: a CSV file, or the stress samples themselves (array-like)."""
     p = _params()
-    x = load_series(path)
+    x = load_series(path) if isinstance(path, str) else np.asarray(path, dtype=np.float64)
     c = cycles(x)
     M = _model()
     X = features(c).reindex(M["features"]).to_frame().T
@@ -122,6 +125,7 @@ def predict(path: str) -> dict:
             "sn_constant_C": p["C"],
             "damage_by_amplitude_band": bands[:4],
             "remaining_capacity": round(max(0.0, 1.0 - D), 4),
+            "urgency": damage_urgency(D),
             **_evidence(M["reference"], D, float(D_formula), float(c[:, 0].max()), bands),
             "note": "A handful of the largest stress swings drive most of the "
                     "fatigue damage: a swing twice as big does roughly "
@@ -167,10 +171,24 @@ def _evidence(ref: dict, D: float, D_formula: float, amp_max: float, bands: list
               f"to {g_hi:+.1f}%)" + (": unusual for this model, treat with caution."
                                      if not g_lo <= gap <= g_hi else "."))
 
+    priority = damage_priority(D)
     if D >= 1:
-        priority, reason = "high", "D >= 1: the fatigue failure criterion is reached."
+        reason = "D >= 1: the fatigue failure criterion is reached."
     elif D >= REVIEW_DAMAGE:
-        priority, reason = "medium", f"More than half of the fatigue capacity is used ({D:.0%})."
+        reason = f"More than half of the fatigue capacity is used ({D:.0%})."
     else:
-        priority, reason = "low", f"{1 - D:.0%} of the fatigue capacity remains."
+        reason = f"{1 - D:.0%} of the fatigue capacity remains."
     return {"evidence": ev, "priority": priority, "priority_reason": reason}
+
+
+def damage_urgency(D: float) -> dict:
+    """Share of the fatigue limit used (failure at D = 1, from the Info Kit);
+    the review level is REVIEW_DAMAGE (50%)."""
+    return urgency("limit", "cumulative fatigue damage vs the failure limit D = 1", "",
+                   1.0, D, D * 100, REVIEW_DAMAGE * 100,
+                   f"{D * 100:.0f}% of the fatigue limit used; review from "
+                   f"{REVIEW_DAMAGE * 100:.0f}%, failure at 100%")
+
+
+def damage_priority(D: float) -> str:
+    return "high" if D >= 1 else "medium" if D >= REVIEW_DAMAGE else "low"

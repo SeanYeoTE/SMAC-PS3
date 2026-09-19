@@ -46,8 +46,10 @@ exception: it returns `{"segments": DataFrame, "detail": {...}}`, because one fi
 contains many door cycles. `predict.SUBSYSTEMS` lists each subsystem's display
 name and accepted file types, which is enough to build the upload page.
 
-Every `detail` also has `evidence`, `priority` and `priority_reason`, which compare the
-file with the training data (see [Evidence and priority](#evidence-and-priority-for-root-cause-analysis)).
+Every `detail` also has `evidence`, `priority`, `priority_reason` and `urgency`, which
+compare the file with the training data and with what is normal (see
+[Evidence and priority](#evidence-and-priority-for-root-cause-analysis)). The same models
+can also run on a live sensor stream (see [Live monitoring](#live-monitoring)).
 
 The same predictors run from the command line, for one file or a whole folder. This
 writes the CSV in the exact submission format:
@@ -364,6 +366,65 @@ Rail Test9 is medium (Side II at 63%; its Side II loudest axle box is above 98% 
 speed-matched Normal files). SHM test02 is medium (D = 0.82, 18% capacity
 left).
 
+### Urgency: how far past the alert level
+
+`urgency` says how far a reading is from normal, in percent, with the alert level on
+the same scale, so `times_threshold` is how many times past the alert level it is. The
+upper end is left open: nothing is anchored to the largest value in the training data.
+
+| Subsystem | Reading | Normal | Alert level | Test data |
+|---|---|---|---|---|
+| Door | a cycle's mean motor current | this door's normal current for the same operation | 10.7% above normal | worst cycle 37.9% above normal (3.5×) |
+| ACV | cooling delivered in the hottest quarter (outdoor − cabin) | the other cars (median car) | 1.7% less cooling, the largest shortfall of any healthy car in training | car 01 4.0% short (2.3×) |
+| Rail | the loudest axle box on the flagged (or louder) side | the median of the 40 Normal recordings closest in speed | the level 95% of those recordings stay below (35–90% above normal on the test files at 20 km/h or more); not given for a stationary train | Test9 Side II 79% above normal, alert at 62% (1.3×) |
+| SHM | cumulative damage D | — (every training file is a healthy structure, so high damage alone is not abnormal) | 50% of the fatigue limit D = 1 (review); failure at 100% | test02 82% of the limit (1.6×) |
+
+## Live monitoring
+
+The same models also run on data as it arrives, so the app can be connected to a live
+sensor: each chunk of data goes into a monitoring session, the session runs the live
+version of its model on everything received so far, and the app polls for events and
+alerts. A replay plays one of the recorded files into a session through the same path,
+as if a sensor were sending it, which is how it is demonstrated and tested
+(`ps3/live.py`).
+
+| Subsystem | How it runs live | Checked against the file models |
+|---|---|---|
+| Door | A cycle ends when the next sample arrives more than 1 s later. Each cycle is compared with this door's normal current: the 40th percentile of its last 50 cycles of the same operation. The first 5 cycles of each operation calibrate it. | Test.csv: same 38 cycles and the same 8 alerts. Train.csv: 100 of 100 cycles right after calibration (4 of the 10 calibration cycles are abnormal and not flagged). |
+| SHM | Damage accumulates as samples arrive (the same fatpack counting and Miner constants). When a 581,120-sample segment is complete, the ridge model's estimate replaces the running figure. Alerts at 50% and 100% of the fatigue limit, cumulative over segments. | Segment estimates identical to the file model. |
+| ACV | The ranking is recomputed on all rows so far and shown as provisional from 2 hours of data. An alert fires once the same car has led at ≥ 80% for 12 hours of data (never before 12 hours); a later change of leader raises a revised alert. | Replaying the six training cases with models that never saw them: no false alerts, and the leaking car flagged in 4 of 6 cases after 12–69 hours of data. A leak shows as a few tenths of a degree, so it takes days of data to be sure. Test case: car 04 flagged at 21.5 h, revised to car 01 at 71 h; the final ranking equals the file model's. |
+| Rail | Every 1-second window (10,000 samples at 10 kHz) is classified; corrugation on either side raises an alert. | Window predictions identical to the file model. |
+
+**API** (all under `/api/live`):
+
+| Method and path | What it does |
+|---|---|
+| `POST /{subsystem}/sessions` | Start a session; returns `session_id` and the chunk format to send |
+| `POST /sessions/{id}/data` | Sensor input: one chunk of data (CSV text in the dataset's own columns; SHM: one number per line, or JSON `{"values": [...]}`); returns the new events |
+| `POST /sessions/{id}/replay` | Upload one or more recorded files (`files`) and an optional `speed` (× real time; defaults: Door 20, ACV 1800, Rail 1; SHM 1 = one file per 10 s) |
+| `GET /sessions/{id}/events?after=<seq>` | New events since the last one seen, plus the current state; poll about once a second |
+| `GET /sessions/{id}` | Current state (latest values, ranking or cumulative damage, most urgent alert) |
+| `POST /sessions/{id}/stop` | Stop a replay, or mark the end of a sensor stream |
+| `DELETE /sessions/{id}` | Remove the session |
+
+Each event is `{seq, kind: "update" | "alert", time, priority, title, message,
+urgency, values}`; alerts carry the same `urgency` block as the file predictions, so the
+app can sort them by `times_threshold`.
+
+```bash
+# a sensor gateway sending Door data
+SID=$(curl -s -X POST $API/api/live/door/sessions | jq -r .session_id)
+curl -s -X POST $API/api/live/sessions/$SID/data -H "content-type: text/csv" --data-binary @chunk.csv
+curl -s "$API/api/live/sessions/$SID/events?after=0"
+
+# the same session fed by a replay of a recorded file at 20x
+curl -s -X POST $API/api/live/sessions/$SID/replay -F files=@Test.csv -F speed=20
+```
+
+Sessions are kept in memory, so the backend should run as a single Cloud Run instance
+(`--max-instances 1`). Tests: `pip install pytest httpx`, then
+`PS3_DATA=/path/to/02_Datasets pytest tests/`.
+
 ## Validation
 
 ### How each model is validated
@@ -672,15 +733,18 @@ ps3/
     params_shm.json     Miner's-rule m and C (cross-check shown in the app)
     model_rail.joblib   Rail model (soft-vote ensemble)
     model_acv.joblib    ACV model (logistic-regression ranker)
+    live.py             live monitoring: sessions, live versions of the models, replay
+    urgency.py          the urgency block shared by all four subsystems
     rca.py              Gemini root cause analysis, called by the app
 fit_shm.py              refits the SHM model and m, C
 fit_rail.py             refits the Rail ensemble
 fit_acv.py              refits the ACV ranker
+tests/test_live.py      live monitoring API tests (need PS3_DATA)
 make_submissions.py     offline submission generator (format check)
 requirements.txt
 submission/             four formatted CSVs
 charts/                 figures used in this README
-app/main.py             FastAPI wrapper around ps3.predict
+app/main.py             FastAPI wrapper around ps3.predict and ps3.live
 web/                    Next.js + shadcn/ui upload-and-diagnose frontend
 Dockerfile, .dockerignore          backend container (context: repo root)
 web/Dockerfile, web/.dockerignore  frontend container (context: web/)

@@ -36,8 +36,11 @@ import re
 import numpy as np
 import pandas as pd
 
+from .urgency import urgency
+
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "model_acv.joblib")
 FEATURES = ["dev", "dev_hot", "warmest_share", "dev_setpoint", "dev_outdoor_hot"]
+RAW_COLUMNS = FEATURES + ["cooling_hot_degC", "normal_cooling_hot_degC", "cooling_short_pct"]
 CAR_COL = re.compile(r"^Car (\d{2}) - (.+)$")
 _M = None
 
@@ -103,10 +106,17 @@ def car_features(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     O = _num(_wide(df, "Outdoor Average Temperature"))
     if O is not None and O.notna().any().any():
         o = O.median(axis=1)
-        f["dev_outdoor_hot"] = D[o >= o.quantile(0.75)].mean()
+        hot = o >= o.quantile(0.75)
+        f["dev_outdoor_hot"] = D[hot].mean()
+        # cooling delivered (outdoor - cabin) in the hottest quarter, per car and
+        # for the median car; used for urgency, not by the model
+        cool = (I.rsub(o, axis=0))[hot]
+        f["cooling_hot_degC"] = cool.mean()
+        f["normal_cooling_hot_degC"] = cool.median(axis=1).mean()
+        f["cooling_short_pct"] = (1 - f["cooling_hot_degC"] / f["normal_cooling_hot_degC"]) * 100
 
-    z = (f - f.mean()) / f.std().replace(0, np.nan)
-    return z.reindex(columns=FEATURES).fillna(0.0), f.reindex(columns=FEATURES)
+    z = (f[[c for c in FEATURES if c in f]] - f.mean()) / f.std().replace(0, np.nan)
+    return z.reindex(columns=FEATURES).fillna(0.0), f.reindex(columns=RAW_COLUMNS)
 
 
 def make_model():
@@ -164,6 +174,7 @@ def predict(path: str) -> dict:
             "manual_control_fraction": {c: round(float(v), 3)
                                         for c, v in order["manual"].items()},
             **ev,
+            "urgency": cooling_urgency(M["reference"], top, raw),
             "note": f"Car {top} is the most likely leak ({p_top:.0%} model "
                     f"probability). Its cabin runs {order.at[top, 'dev']:.3f} C "
                     "warmer than the train median, consistent with reduced "
@@ -219,3 +230,21 @@ def _evidence(ref: dict, top: str, order: pd.DataFrame, physics_top: str,
                   "physics cross-check disagrees; check the temperature sensors "
                   "and setpoints before inspecting.")
     return {"evidence": ev, "priority": priority, "priority_reason": reason}
+
+
+def cooling_urgency(ref: dict, car: str, raw: pd.DataFrame) -> dict:
+    """How much less cooling the car delivers than the other cars (the median
+    car) over the hottest quarter; the alert level is the largest shortfall of
+    any healthy car in training."""
+    thr = ref["normal_short_pct_max"]
+    pct = raw.at[car, "cooling_short_pct"]
+    if pd.isna(pct):
+        return urgency("normal", "cooling delivered in the hottest quarter vs the other cars",
+                       "degC of cooling", None, None, None, thr,
+                       "Not available: this file has no outdoor temperature.")
+    word = "less" if pct >= 0 else "more"
+    return urgency("normal", "cooling delivered in the hottest quarter vs the other cars",
+                   "degC of cooling", raw.at[car, "normal_cooling_hot_degC"],
+                   raw.at[car, "cooling_hot_degC"], pct, thr,
+                   f"Car {car} delivers {abs(pct):.1f}% {word} cooling than the other cars "
+                   f"in the hottest quarter; alert at {thr:.1f}% less ({pct / thr:.1f}x the alert level)")

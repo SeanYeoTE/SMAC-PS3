@@ -46,6 +46,12 @@ def main(root):
         reference.update({f"leak_{key}_degC_min": round(float(leak.min()), 4),
                           f"leak_{key}_degC_max": round(float(leak.max()), 4),
                           f"normal_{key}_degC_max": round(float(normal.max()), 4)})
+    # urgency: cooling shortfall vs the other cars in the hottest quarter (%)
+    leak = pd.Series([raw.at[car, "cooling_short_pct"] for _, _, raw, car in cases]).dropna()
+    normal = pd.concat([raw["cooling_short_pct"].drop(car) for _, _, raw, car in cases]).dropna()
+    reference.update({"leak_short_pct_min": round(float(leak.min()), 2),
+                      "leak_short_pct_max": round(float(leak.max()), 2),
+                      "normal_short_pct_max": round(float(normal.max()), 2)})
     print("reference:", reference)
     joblib.dump({"model": model, "features": acv.FEATURES, "reference": reference},
                 acv.MODEL_PATH)

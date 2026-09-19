@@ -31,6 +31,8 @@ import re
 import numpy as np
 import pandas as pd
 
+from .urgency import urgency
+
 FS = 10_000
 WHEEL_DIAMETER_M = 0.85
 TEETH = 90
@@ -80,9 +82,10 @@ def _side_features(A: np.ndarray, tag: str, v_ms: float, out: dict,
             out[f"{tag}_lam_{lo}"] = np.nan
 
 
-def featurize(path: str) -> pd.Series:
-    """~3 s per file. All 272 training files extract in about 3 minutes."""
-    df = pd.read_csv(path, dtype=np.float32)
+def featurize(path) -> pd.Series:
+    """path: a CSV file or a DataFrame with the same 129 columns.
+    ~0.3 s per file; all 272 training files extract in a few minutes."""
+    df = pd.read_csv(path, dtype=np.float32) if isinstance(path, str) else path.astype(np.float32)
     groups = _channel_groups(list(df.columns))
     a = df.to_numpy()
     v_ms = speed_kmh(a[:, 0]) / 3.6
@@ -154,7 +157,8 @@ def make_model():
     ], voting="soft")
 
 
-def predict(path: str) -> dict:
+def predict(path) -> dict:
+    """path: a CSV file or a DataFrame with the same 129 columns."""
     global _M
     if _M is None:
         import joblib
@@ -178,6 +182,7 @@ def predict(path: str) -> dict:
             "side_I_over_II": round(ratio, 3),
             "stationary": bool(f["speed"] < 5),
             **_evidence(_M["reference"], f, str(label), proba),
+            "urgency": vibration_urgency(_M["reference"], f, str(label)),
             "note": ("Side I vibration is higher" if ratio > 1.05 else
                      "Side II vibration is higher" if ratio < 0.95 else
                      "Both sides comparable") +
@@ -235,3 +240,30 @@ def _evidence(ref: dict, f: pd.Series, label: str, proba: dict) -> dict:
     if stationary and priority == "high":
         priority, reason = "medium", reason + " Re-record while moving to confirm."
     return {"evidence": ev, "priority": priority, "priority_reason": reason}
+
+
+def vibration_urgency(ref: dict, f: pd.Series, label: str) -> dict:
+    """How far the loudest axle box is above normal recordings at similar speed
+    (median of the SPEED_NEIGHBOURS closest Normal training recordings); the
+    alert level is the level 95% of those recordings stay below. Not given for
+    a (nearly) stationary train: those recordings are all at the noise floor,
+    so the alert level collapses to about 1% and would overstate urgency."""
+    if f["speed"] < 5:
+        return urgency("normal", "loudest axle box vs normal recordings at similar speed",
+                       "vibration RMS", None, None, None, 0.0,
+                       "Not available: the train is (nearly) stationary, so vibration "
+                       "levels say nothing about the rail.")
+    idx = np.argsort(np.abs(np.asarray(ref["normal_speed"]) - f["speed"]))[:SPEED_NEIGHBOURS]
+    rows = {}
+    for side in ("I", "II"):
+        vals = np.asarray(ref["normal"][f"{side}_vib_wheel_max"])[idx]      # log10 RMS
+        med, p95 = np.median(vals), np.percentile(vals, 95)
+        rows[side] = (10 ** med, 10 ** f[f"{side}_vib_wheel_max"],
+                      (10 ** (f[f"{side}_vib_wheel_max"] - med) - 1) * 100, (10 ** (p95 - med) - 1) * 100)
+    side = label.split()[-1] if label != "Normal" else max(rows, key=lambda s: rows[s][2] / rows[s][3])
+    normal, value, pct, thr = rows[side]
+    word = "above" if pct >= 0 else "below"
+    return urgency("normal", f"loudest Side {side} axle box vs normal recordings at similar speed",
+                   "vibration RMS", normal, value, pct, thr,
+                   f"Side {side} loudest axle box {abs(pct):.0f}% {word} normal for this speed; "
+                   f"alert at {thr:.0f}% above ({pct / thr:.1f}x the alert level)")

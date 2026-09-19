@@ -26,6 +26,8 @@ Two findings this is built on:
 import numpy as np
 import pandas as pd
 
+from .urgency import urgency
+
 CURRENT = "Motor current(mA)"
 CLOSING = "Door is closing"
 GAP_SECONDS = 1.0
@@ -91,6 +93,7 @@ def predict(path: str) -> dict:
     )[["operation", "rows", "cur_mean", "baseline", "ratio", "excess_pct", "abnormal"]]
     ev = _evidence(seg.assign(operation=detail["operation"],
                               start_time=out["start_time"].to_numpy()))
+    worst = seg.loc[seg["ratio"].idxmax()] if len(seg) else None
 
     return {
         "segments": out.reset_index(drop=True),
@@ -102,6 +105,8 @@ def predict(path: str) -> dict:
             "ratio_threshold": RATIO_THRESHOLD,
             "per_segment": detail.round(3).reset_index(drop=True),
             **ev,
+            "urgency": None if worst is None else cycle_urgency(
+                worst["cur_mean"], worst["baseline"], "Close" if worst["is_close"] else "Open"),
             "note": "Each cycle's motor current is compared against the typical "
                     "current for that same kind of cycle (opening or closing) in "
                     "this same recording, rather than a fixed number shared across "
@@ -153,3 +158,16 @@ def _evidence(seg: pd.DataFrame) -> dict:
                   f"cycle in training (worst {(worst['ratio'] - 1) * 100:+.1f}% vs median "
                   f"{(TRAIN_ABNORMAL_RATIO_MEDIAN - 1) * 100:+.1f}%).")
     return {"evidence": ev, "priority": priority, "priority_reason": reason}
+
+
+def cycle_urgency(cur_mean: float, baseline: float, operation: str) -> dict:
+    """How far one cycle's current is above this door's normal current for the
+    same operation; the alert level is RATIO_THRESHOLD (10.7% above normal)."""
+    pct = (cur_mean / baseline - 1) * 100
+    thr = (RATIO_THRESHOLD - 1) * 100
+    word = "above" if pct >= 0 else "below"
+    ing = "opening" if operation == "Open" else "closing"
+    return urgency("normal", f"motor current while {ing} vs this door's normal {ing} current",
+                   "mA", baseline, cur_mean, pct, thr,
+                   f"{abs(pct):.1f}% {word} this door's normal {ing} current; "
+                   f"alert at {thr:.1f}% above ({pct / thr:.1f}x the alert level)")
